@@ -14,6 +14,7 @@ method = "POST"
 url = "/users"
 body = { name = "Alice" }
 assert_status = 200
+assert_headers = { "Content-Type" = "Application/json" }
 assert_jsonpath = { "$.name" = "Alice" }
 
 [[tests]]
