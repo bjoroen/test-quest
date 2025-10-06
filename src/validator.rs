@@ -1,7 +1,13 @@
 use std::collections::HashMap;
 use std::str::FromStr;
+use std::string::ParseError;
 
+use miette::Diagnostic;
+use miette::NamedSource;
+use miette::Report;
+use miette::SourceSpan;
 use reqwest::Method;
+use reqwest::Request;
 use reqwest::Url;
 use thiserror::Error;
 use toml::Value;
@@ -16,45 +22,139 @@ pub enum Assertions {
     Headers(HashMap<String, String>),
 }
 
+pub struct IR {
+    pub tests: Vec<Test>,
+}
+
 pub struct Test {
     pub name: String,
-    pub method: reqwest::Method,
+    pub method: Method,
     pub url: Url,
     pub body: Option<serde_json::Value>,
     pub assertions: Vec<Assertions>,
 }
 
-#[derive(Error, Debug)]
-pub enum ValidationError {
-    #[error("Failed to read toml file")]
-    HeaderAssertionError,
+#[derive(Debug, Error, Diagnostic)]
+#[error("Invalid field `{field}`: {message}")]
+pub struct ValidationError {
+    field: String,
+    message: String,
+    #[source_code]
+    src: Option<NamedSource<String>>,
+    #[label("invalid value here")]
+    span: Option<SourceSpan>,
+}
+
+fn find_span(needle: &str, toml_src: &str) -> Option<SourceSpan> {
+    toml_src
+        .find(needle)
+        .map(|start| SourceSpan::new(start.into(), needle.len()))
 }
 
 impl Validator {
-    pub fn validate(proff: &Proff) -> Result<Vec<Test>, ValidationError> {
-        let mut tests = vec![];
-        for test in &proff.tests {
-            let method = parse_method(&test.method);
-            let name = test.name.clone();
+    pub fn validate(
+        proff: &Proff,
+        toml_src: &str,
+        file_name: &str,
+    ) -> miette::Result<IR, ValidationError> {
+        let tests: Vec<Test> = proff
+            .tests
+            .iter()
+            .map(|test| {
+                let method =
+                    parse_method(&test.method.to_uppercase()).map_err(|e| ValidationError {
+                        field: format!("{} - method", test.name),
+                        message: e.to_string(),
+                        src: Some(NamedSource::new(file_name, toml_src.to_string())),
+                        span: find_span(&test.method, toml_src),
+                    })?;
 
-            // TODO: This should return an error with trace to the file
-            let url = Url::from_str(&format!("{}{}", proff.setup.url, &test.url)).unwrap();
+                let url = parse_url(&proff.setup.base_url, &test.url).map_err(|e| match e {
+                    ParseUrlError::SetupUrlEndsWithSlash => ValidationError {
+                        field: "setup.url".into(),
+                        message: "The base URL from setup can’t end with a /, and each URL in \
+                                  test must start with one"
+                            .into(),
+                        src: Some(NamedSource::new(file_name, toml_src.to_string())),
+                        span: find_span(&proff.setup.base_url, toml_src),
+                    },
+                    ParseUrlError::PathUrlMissingSlash => ValidationError {
+                        field: format!("{}/url", test.name),
+                        message: "The URL field in a test is required to begin with a leading /."
+                            .into(),
+                        src: Some(NamedSource::new(file_name, toml_src.to_string())),
+                        span: find_span(&test.url, toml_src),
+                    },
+                    ParseUrlError::ParseIntoUrlFailed(parse_error) => ValidationError {
+                        field: format!("{}.url", &proff.setup.base_url),
+                        message: parse_error.to_string(),
+                        src: None,
+                        span: None,
+                    },
+                })?;
 
-            let body = test.body.clone();
+                let body = test.body.clone();
+                let name = test.name.clone();
 
-            let assertions = parse_assertions(&test.assert_status, &test.assert_headers)?;
+                let assertions = parse_assertions(&test.assert_status, &test.assert_headers)?;
 
-            tests.push(Test {
-                name,
-                method,
-                url,
-                body,
-                assertions,
-            });
-        }
+                Ok(Test {
+                    name,
+                    body,
+                    method,
+                    url,
+                    assertions,
+                })
+            })
+            .collect::<Result<_, _>>()?;
 
-        Ok(tests)
+        Ok(IR { tests })
     }
+}
+
+#[derive(Debug, Error)]
+enum ParseUrlError {
+    #[error("")]
+    SetupUrlEndsWithSlash,
+    #[error("")]
+    PathUrlMissingSlash,
+    #[error("Failed to parse URL: {0}")]
+    ParseIntoUrlFailed(#[from] url::ParseError),
+}
+fn parse_url(base_url: &str, path_url: &str) -> Result<Url, ParseUrlError> {
+    if base_url.ends_with("/") {
+        return Err(ParseUrlError::SetupUrlEndsWithSlash);
+    }
+
+    if !path_url.starts_with("/") {
+        return Err(ParseUrlError::PathUrlMissingSlash);
+    }
+
+    let url = reqwest::Url::parse(&format!("{base_url}{path_url}"))
+        .map_err(ParseUrlError::ParseIntoUrlFailed)?;
+
+    Ok(url)
+}
+
+fn parse_method(method: &str) -> Result<reqwest::Method, String> {
+    let method = Method::from_str(method).map_err(|e| e.to_string())?;
+
+    if !matches!(
+        method,
+        Method::GET
+            | Method::POST
+            | Method::PUT
+            | Method::DELETE
+            | Method::PATCH
+            | Method::HEAD
+            | Method::OPTIONS
+            | Method::CONNECT
+            | Method::TRACE
+    ) {
+        return Err(format!("Invalid HTTP method: {}", method));
+    }
+
+    Ok(method)
 }
 
 fn parse_assertions(
@@ -85,17 +185,4 @@ fn parse_assertions(
     }
 
     Ok(assert_vec)
-}
-
-fn parse_method(method: &str) -> reqwest::Method {
-    match method.to_uppercase().as_str() {
-        "GET" => Method::GET,
-        "POST" => Method::POST,
-        "PUT" => Method::PUT,
-        "DELETE" => Method::DELETE,
-        "PATCH" => Method::PATCH,
-        "HEAD" => Method::HEAD,
-        "OPTIONS" => Method::OPTIONS,
-        _ => todo!("Need to handle error"),
-    }
 }

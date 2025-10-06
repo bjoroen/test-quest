@@ -1,21 +1,21 @@
 [setup]
 mode = "external"
-url = "http://localhost:6969"
+base_url = "http://localhost:6969"
+
+[[tests]]
+name = "create user"
+method = "POST"
+url = "/users/22"
+body = { name = "Alice" }
+assert_status = 200
+assert_headers = { "Content-Type" = "Application/json" }
+assert_jsonpath = { "$.name" = "Alice" }
 
 [[tests]]
 name = "health check"
 method = "GET"
 url = "/health"
 assert_status = 200
-
-[[tests]]
-name = "create user"
-method = "POST"
-url = "/users"
-body = { name = "Alice" }
-assert_status = 200
-assert_headers = { "Content-Type" = "Application/json" }
-assert_jsonpath = { "$.name" = "Alice" }
 
 [[tests]]
 name = "list users"

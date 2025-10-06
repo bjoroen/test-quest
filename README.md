@@ -39,13 +39,14 @@ expect_jsonpath = { "$.users[0].name" = "Alice" }
 
     - Parse TOML test files
     - Run HTTP requests against a configured server
-    - Assert status codes and JSONPath values
+    - Assert status codes and header values
+    - Print test results in a nice way
 
 
  - [ ] __CLI__
 
-    - proff run tests/api.toml
-    = Options for filtering tests, updating snapshots, verbose output
+    - Nice looking error messages with [Miette Error](https://github.com/zkat/miette)
+    - Options for filtering tests, updating snapshots, verbose output
 
  - [ ] __Database support__
 

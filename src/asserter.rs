@@ -21,30 +21,31 @@ pub enum AssertionResult {
 
 impl Asserter {
     pub fn run(runner_results: Vec<RunnerResult>) -> Result<Vec<Asserts>, OutputError> {
-        /// This whole function with asssers, assertresuls, vecs here and there
-        /// is super confusing!!?><?>
-        let mut some_name = vec![];
-
-        for result in runner_results {
-            let mut assert_result = vec![];
-            let Ok(r) = result.request else { todo!() };
-
-            for asss in result.assertions {
-                let ass = match asss {
-                    Assertions::Status(s) => assert_status(&s, r.status()),
-                    Assertions::Headers(hash_map) => assert_header(&hash_map, r.headers()),
+        let res: Vec<Asserts> = runner_results
+            .into_iter()
+            .map(|result| {
+                let r = match result.request {
+                    Ok(r) => r,
+                    Err(_) => todo!(),
                 };
 
-                assert_result.push(ass)
-            }
+                let assert_result: Vec<_> = result
+                    .assertions
+                    .into_iter()
+                    .map(|asss| match asss {
+                        Assertions::Status(s) => assert_status(&s, r.status()),
+                        Assertions::Headers(hash_map) => assert_header(&hash_map, r.headers()),
+                    })
+                    .collect();
 
-            some_name.push(Asserts {
-                name: result.name,
-                results: assert_result,
+                Asserts {
+                    name: result.name,
+                    results: assert_result,
+                }
             })
-        }
+            .collect();
 
-        Ok(some_name)
+        Ok(res)
     }
 }
 

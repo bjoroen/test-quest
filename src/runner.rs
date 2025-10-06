@@ -11,6 +11,7 @@ use tokio::task;
 
 use crate::parser::Proff;
 use crate::validator::Assertions;
+use crate::validator::IR;
 use crate::validator::Test;
 
 #[derive(Error, Debug)]
@@ -36,11 +37,11 @@ pub struct Runner {
 }
 
 impl Runner {
-    pub fn new(tests: Vec<Test>) -> Self {
+    pub fn new(ir: IR) -> Self {
         let client = Client::new();
 
         Self {
-            tests,
+            tests: ir.tests,
             client,
             results: None,
         }
@@ -62,58 +63,22 @@ impl Runner {
         let mut handles = vec![];
 
         for test in &self.tests {
+            let client = self.client.clone();
+
             let body = test.body.clone();
             let url = test.url.clone();
             let method = test.method.clone();
-            let client = self.client.clone();
             let name = test.name.clone();
             let assertions = test.assertions.clone();
 
             let handle = task::spawn(async move {
-                let request = match method.as_str() {
-                    "POST" => {
-                        if let Some(json_body) = body {
-                            client.post(url).body(json_body.to_string())
-                        } else {
-                            client.post(url)
-                        }
-                    }
-                    "PUT" => {
-                        if let Some(json_body) = body {
-                            client.put(url).body(json_body.to_string())
-                        } else {
-                            client.put(url)
-                        }
-                    }
-                    "PATCH" => {
-                        if let Some(json_body) = body {
-                            client.patch(url).body(json_body.to_string())
-                        } else {
-                            client.patch(url)
-                        }
-                    }
-                    "DELETE" => {
-                        if let Some(json_body) = body {
-                            client.delete(url).body(json_body.to_string())
-                        } else {
-                            client.delete(url)
-                        }
-                    }
-                    "GET" => {
-                        if let Some(json_body) = body {
-                            client.get(url).body(json_body.to_string())
-                        } else {
-                            client.get(url)
-                        }
-                    }
-                    // TODO:
-                    // Move all parsing logic into parser, runner should never fail because of
-                    // parser errors, like bad urls or methods types
-                    _ => todo!(),
-                };
-
-                let request = request.build().unwrap();
-                let result = client.execute(request).await;
+                let result = if let Some(body) = body {
+                    client.request(method, url).body(body.to_string())
+                } else {
+                    client.request(method, url)
+                }
+                .send()
+                .await;
 
                 RunnerResult {
                     name,
@@ -126,13 +91,17 @@ impl Runner {
         }
 
         let results = join_all(handles).await;
-        let mut runner_results = vec![];
-        for result in results {
-            match result {
-                Ok(result) => runner_results.push(result),
-                Err(e) => eprintln!("Task failed: {:?}", e),
-            }
-        }
+
+        let runner_results = results
+            .into_iter()
+            .filter_map(|r| match r {
+                Ok(res) => Some(res),
+                Err(e) => {
+                    eprintln!("Task failed: {:?}", e);
+                    None
+                }
+            })
+            .collect();
 
         Ok(runner_results)
     }

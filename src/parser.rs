@@ -1,7 +1,11 @@
+use miette::Diagnostic;
+use miette::NamedSource;
+use miette::SourceSpan;
 use reqwest::Url;
 use serde::Deserialize;
 use serde::Deserializer;
 use serde::Serialize;
+use thiserror::Error;
 
 #[derive(Deserialize, Debug)]
 pub struct Proff {
@@ -9,10 +13,10 @@ pub struct Proff {
     pub tests: Vec<Test>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Deserialize, Debug)]
 pub struct Setup {
     pub mode: String,
-    pub url: String,
+    pub base_url: String,
 }
 
 #[derive(Deserialize, Debug)]
@@ -20,7 +24,6 @@ pub struct Test {
     pub name: String,
     pub method: String,
     pub url: String,
-    #[serde(default)]
     pub body: Option<serde_json::Value>,
     pub assert_status: Option<i32>,
     pub assert_headers: Option<toml::Value>,
