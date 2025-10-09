@@ -1,3 +1,7 @@
+#![allow(clippy::enum_variant_names)]
+
+use flume::SendError;
+use flume::Sender;
 use futures::future::join_all;
 use reqwest::Client;
 use reqwest::Error;
@@ -15,12 +19,15 @@ use crate::validator::IR;
 use crate::validator::Test;
 
 #[derive(Error, Debug)]
-pub enum RunnerError<'a> {
+pub enum RunerError<'a> {
     #[error("internal error")]
     InternalError,
 
     #[error("Run error: {0}")]
     RunError(&'a str),
+
+    #[error("channel error")]
+    ChannelError(#[from] SendError<RunnerResult>),
 }
 
 #[derive(Debug)]
@@ -47,52 +54,36 @@ impl Runner {
         }
     }
 
-    pub fn start(&self) -> Result<Vec<RunnerResult>, RunnerError<'_>> {
-        match tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .build()
-            .map_err(|_| RunnerError::InternalError)?
-            .block_on(self.run())
-        {
-            Ok(r) => Ok(r),
-            Err(e) => Err(e),
-        }
-    }
+    pub async fn run(self, tx: Sender<RunnerResult>) -> Result<(), RunerError<'static>> {
+        let handles: Vec<_> = self
+            .tests
+            .into_iter()
+            .map(|test| {
+                let client = self.client.clone();
 
-    async fn run(&self) -> Result<Vec<RunnerResult>, RunnerError<'_>> {
-        let mut handles = vec![];
+                let tx = tx.clone();
+                task::spawn(async move {
+                    let result = if let Some(body) = test.body {
+                        client.request(test.method, test.url).body(body.to_string())
+                    } else {
+                        client.request(test.method, test.url)
+                    }
+                    .send()
+                    .await;
 
-        for test in &self.tests {
-            let client = self.client.clone();
+                    tx.send_async(RunnerResult {
+                        name: test.name,
+                        request: result,
+                        assertions: test.assertions,
+                    })
+                    .await
+                    .map_err(RunerError::ChannelError);
+                })
+            })
+            .collect();
 
-            let body = test.body.clone();
-            let url = test.url.clone();
-            let method = test.method.clone();
-            let name = test.name.clone();
-            let assertions = test.assertions.clone();
-
-            let handle = task::spawn(async move {
-                let result = if let Some(body) = body {
-                    client.request(method, url).body(body.to_string())
-                } else {
-                    client.request(method, url)
-                }
-                .send()
-                .await;
-
-                RunnerResult {
-                    name,
-                    request: result,
-                    assertions,
-                }
-            });
-
-            handles.push(handle);
-        }
-
-        let results = join_all(handles).await;
-
-        let runner_results = results
+        futures::future::join_all(handles)
+            .await
             .into_iter()
             .filter_map(|r| match r {
                 Ok(res) => Some(res),
@@ -101,8 +92,8 @@ impl Runner {
                     None
                 }
             })
-            .collect();
+            .collect::<()>();
 
-        Ok(runner_results)
+        Ok(())
     }
 }

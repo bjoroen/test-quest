@@ -25,7 +25,7 @@ pub enum Assertions {
 pub struct IR {
     pub tests: Vec<Test>,
 }
-
+#[derive(Clone)]
 pub struct Test {
     pub name: String,
     pub method: Method,

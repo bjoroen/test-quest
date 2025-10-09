@@ -14,4 +14,5 @@ futures  = { version =  "0.3", features = [] }
 serde_json  = { version =  "1", features = [] }
 miette = { version = "7.6.0", features = ["fancy", "serde"] }
 url = "2.5.7"
+flume  = { version =  "0.11.1", features = ["async"] }
 

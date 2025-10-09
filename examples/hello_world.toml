@@ -7,6 +7,7 @@ name = "create user"
 method = "POST"
 url = "/users/22"
 body = { name = "Alice" }
+
 assert_status = 200
 assert_headers = { "Content-Type" = "Application/json" }
 assert_jsonpath = { "$.name" = "Alice" }
@@ -15,11 +16,13 @@ assert_jsonpath = { "$.name" = "Alice" }
 name = "health check"
 method = "GET"
 url = "/health"
+
 assert_status = 200
 
 [[tests]]
 name = "list users"
 method = "GET"
 url = "/users"
+
 assert_status = 200
 assert_jsonpath = { "$.users[0].name" = "Alice" }

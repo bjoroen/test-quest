@@ -1,10 +1,13 @@
+use flume::Receiver;
 use reqwest::StatusCode;
+use tokio::task;
 
 use crate::runner::RunnerResult;
 use crate::validator::Assertions;
 
 pub struct Asserter {}
 pub struct Output {}
+#[derive(Debug)]
 pub struct OutputError(Vec<Asserts>);
 
 #[derive(Debug)]
@@ -19,33 +22,26 @@ pub enum AssertionResult {
     Header(String),
 }
 
+pub trait Assert {
+    fn assert(&self) -> AssertionResult;
+}
+
+impl Assert for RunnerResult {
+    fn assert(&self) -> AssertionResult {
+        todo!()
+    }
+}
+
 impl Asserter {
-    pub fn run(runner_results: Vec<RunnerResult>) -> Result<Vec<Asserts>, OutputError> {
-        let res: Vec<Asserts> = runner_results
-            .into_iter()
-            .map(|result| {
-                let r = match result.request {
-                    Ok(r) => r,
-                    Err(_) => todo!(),
-                };
+    pub async fn run(rx: Receiver<RunnerResult>) -> Result<Vec<Asserts>, OutputError> {
+        let rx_task = task::spawn(async move {
+            while let Ok(msg) = rx.recv_async().await {
+                msg.assert();
+            }
+        })
+        .await;
 
-                let assert_result: Vec<_> = result
-                    .assertions
-                    .into_iter()
-                    .map(|asss| match asss {
-                        Assertions::Status(s) => assert_status(&s, r.status()),
-                        Assertions::Headers(hash_map) => assert_header(&hash_map, r.headers()),
-                    })
-                    .collect();
-
-                Asserts {
-                    name: result.name,
-                    results: assert_result,
-                }
-            })
-            .collect();
-
-        Ok(res)
+        todo!()
     }
 }
 

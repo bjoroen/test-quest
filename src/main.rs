@@ -15,6 +15,7 @@ use crate::asserter::Asserter;
 use crate::cli::Cli;
 use crate::parser::Proff;
 use crate::runner::Runner;
+use crate::runner::RunnerResult;
 use crate::validator::ValidationError;
 use crate::validator::Validator;
 
@@ -40,11 +41,8 @@ pub enum ProffError {
     AssertError,
 }
 
-fn main() -> Result<()> {
-    try_main()
-}
-
-fn try_main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     let contents = std::fs::read_to_string(&cli.path).map_err(ProffError::FileError)?;
@@ -53,12 +51,13 @@ fn try_main() -> Result<()> {
     let tests =
         Validator::validate(&proff, &contents, &cli.path).map_err(ProffError::ValidationError)?;
 
-    let runner = Runner::new(tests);
-    let result = runner.start();
+    let n_tests = tests.tests.len();
 
-    let Ok(result) = result else { todo!() };
+    let (tx, rx) = flume::bounded::<RunnerResult>(n_tests);
 
-    let out_put = Asserter::run(result).map_err(|_| ProffError::AssertError)?;
+    let runner_fut = Runner::new(tests).run(tx);
+    let asserter_fut = Asserter::run(rx);
+    let (runner_result, out_put) = futures::join!(runner_fut, asserter_fut);
 
     println!("{:#?}", out_put);
 
