@@ -1,7 +1,10 @@
 use flume::Receiver;
+use flume::Sender;
 use reqwest::StatusCode;
+use thiserror::Error;
 use tokio::task;
 
+use crate::Stage;
 use crate::runner::RunnerResult;
 use crate::validator::Assertions;
 
@@ -16,6 +19,12 @@ pub struct Asserts {
     results: Vec<AssertionResult>,
 }
 
+#[derive(Debug, Error)]
+pub enum AssertionError {
+    #[error("Request error")]
+    RequestError,
+}
+
 #[derive(Debug)]
 pub enum AssertionResult {
     Status(String),
@@ -23,25 +32,37 @@ pub enum AssertionResult {
 }
 
 pub trait Assert {
-    fn assert(&self) -> AssertionResult;
+    fn assert(&self, tx: &Sender<(i32, Stage)>) -> Result<AssertionResult, AssertionError>;
 }
 
 impl Assert for RunnerResult {
-    fn assert(&self) -> AssertionResult {
+    fn assert(&self, tx: &Sender<(i32, Stage)>) -> Result<AssertionResult, AssertionError> {
+        let Ok(request) = &self.request else {
+            return Err(AssertionError::RequestError);
+        };
+
+        self.assertions.iter().map(|a| {
+            todo!();
+            todo!()
+        });
+
         todo!()
     }
 }
 
 impl Asserter {
-    pub async fn run(rx: Receiver<RunnerResult>) -> Result<Vec<Asserts>, OutputError> {
+    pub async fn run(
+        rx: Receiver<RunnerResult>,
+        output_tx: Sender<(i32, Stage)>,
+    ) -> Result<(), OutputError> {
         let rx_task = task::spawn(async move {
             while let Ok(msg) = rx.recv_async().await {
-                msg.assert();
+                let results = msg.assert(&output_tx);
             }
         })
         .await;
 
-        todo!()
+        Ok(())
     }
 }
 

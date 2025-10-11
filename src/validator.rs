@@ -14,7 +14,7 @@ use toml::Value;
 
 use crate::parser::Proff;
 
-pub struct Validator;
+pub struct Validator(i32);
 
 #[derive(Debug, Clone)]
 pub enum Assertions {
@@ -27,6 +27,7 @@ pub struct IR {
 }
 #[derive(Clone)]
 pub struct Test {
+    pub id: i32,
     pub name: String,
     pub method: Method,
     pub url: Url,
@@ -52,7 +53,12 @@ fn find_span(needle: &str, toml_src: &str) -> Option<SourceSpan> {
 }
 
 impl Validator {
+    pub fn new() -> Self {
+        Self(0)
+    }
+
     pub fn validate(
+        &mut self,
         proff: &Proff,
         toml_src: &str,
         file_name: &str,
@@ -98,7 +104,11 @@ impl Validator {
 
                 let assertions = parse_assertions(&test.assert_status, &test.assert_headers)?;
 
+                let id = self.0;
+                self.0 = self.0 + 1;
+
                 Ok(Test {
+                    id,
                     name,
                     body,
                     method,
