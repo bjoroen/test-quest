@@ -1,26 +1,23 @@
-#![allow(unused)]
 #![allow(clippy::result_large_err)]
 
-use std::collections::HashMap;
-use std::error::Error;
 use std::sync::Arc;
 
 use clap::Parser;
+use console::Emoji;
+use console::Style;
+use console::Term;
 use flume::Receiver;
 use miette::Diagnostic;
-use miette::IntoDiagnostic;
-use miette::NamedSource;
-use miette::Report;
 use miette::Result;
 use thiserror::Error;
-use tokio::sync::Mutex;
-use tokio::task;
 
+use crate::asserter::AssertResult;
 use crate::asserter::Asserter;
+use crate::asserter::TestResult;
 use crate::cli::Cli;
 use crate::parser::Proff;
-use crate::runner::Runner;
 use crate::runner::RunnerResult;
+use crate::runner::run_http_tests;
 use crate::validator::ValidationError;
 use crate::validator::Validator;
 
@@ -46,36 +43,61 @@ pub enum ProffError {
     AssertError,
 }
 
-#[derive(Debug)]
-enum Stage {
-    Registrated,
-    Running,
-    Asserting,
-    Done,
-}
-
-struct OutPutter {
-    tests: Arc<Mutex<HashMap<i32, Stage>>>,
-}
+struct OutPutter;
 
 impl OutPutter {
-    pub fn new() -> Self {
-        Self {
-            tests: Arc::new(Mutex::new(HashMap::new())),
-        }
-    }
+    pub async fn start(
+        rx: Receiver<(String, Arc<[AssertResult]>)>,
+        test_path: &str,
+        n_tests: usize,
+    ) {
+        let style = Style::new().bold().cyan();
+        let open_text =
+            &format!("Running test file: {test_path} Found {n_tests} tests: Running...");
+        let open_text = style.apply_to(open_text);
 
-    pub async fn start(&self, rx: Receiver<(i32, Stage)>) {
-        let tests = Arc::clone(&self.tests);
-
-        let rx_task = task::spawn(async move {
-            while let Ok(msg) = rx.recv_async().await {
-                let mut map = tests.lock().await;
-                println!("{} - {:#?}", msg.0, msg.1);
-                map.insert(msg.0, msg.1);
+        println!("{open_text}");
+        let mut i = 1;
+        let mut failed_tests: Vec<(String, AssertResult)> = vec![];
+        while let Ok((name, result)) = rx.recv_async().await {
+            for r in result.iter() {
+                match r.status {
+                    TestResult::Pass => {
+                        println!(
+                            "[{i}/{n_tests}] {}  {name}: {} {}",
+                            console::style("✔").green().bold(),
+                            r.actual,
+                            console::style("PASS!").green().bold(),
+                        )
+                    }
+                    TestResult::Fail => {
+                        failed_tests.push((name.clone(), r.clone()));
+                        println!(
+                            "[{i}/{n_tests}] {}  {name}: {} {}",
+                            console::style("╳").red().bold(),
+                            r.expected,
+                            console::style("FAILED!").red().bold(),
+                        )
+                    }
+                }
             }
-        })
-        .await;
+
+            i += 1;
+        }
+
+        if !failed_tests.is_empty() {
+            println!();
+            println!(
+                "{}",
+                console::style("Summary of Failed Tests:").bold().red()
+            );
+            for (idx, result) in failed_tests.iter().enumerate() {
+                println!("\n{} {}. {}", idx + 1, result.0, result.1);
+            }
+        } else {
+            println!();
+            println!("{}", console::style("All tests passed! 🎉").bold().green());
+        }
     }
 }
 
@@ -84,11 +106,7 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     let (tx, rx) = flume::unbounded::<RunnerResult>();
-    let (outputter_tx, outputter_rx) = flume::unbounded::<(i32, Stage)>();
-
-    let outputter_handle = tokio::spawn(async move {
-        let outputter = OutPutter::new().start(outputter_rx).await;
-    });
+    let (outputter_tx, outputter_rx) = flume::unbounded::<(String, Arc<[AssertResult]>)>();
 
     let contents = std::fs::read_to_string(&cli.path).map_err(ProffError::FileError)?;
     let proff: Proff = toml::from_str(&contents).map_err(ProffError::TomlParsing)?;
@@ -101,14 +119,18 @@ async fn main() -> Result<()> {
 
     let n_tests = tests.tests.len();
 
-    let runner_output_tx = outputter_tx.clone();
-    let runner_fut = Runner::new(tests).run(tx, runner_output_tx);
+    let outputter_rx_printter = outputter_rx.clone();
+    let outputter_handle = tokio::spawn(async move {
+        OutPutter::start(outputter_rx_printter, &cli.path, n_tests).await;
+    });
+
+    let runner_jh = tokio::spawn(async move { run_http_tests(tests.tests, tx).await });
 
     let asserter_outputter_tx = outputter_tx.clone();
-    let asserter_fut = Asserter::run(rx, asserter_outputter_tx);
-    let (runner_result, out_put) = futures::join!(runner_fut, asserter_fut);
+    let asserter_jh = tokio::spawn(async move { Asserter::run(rx, asserter_outputter_tx).await });
 
-    println!("{:#?}", out_put);
+    drop(outputter_tx);
+    let _ = futures::join!(runner_jh, asserter_jh, outputter_handle);
 
     Ok(())
 }

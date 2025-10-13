@@ -3,24 +3,24 @@ mode = "external"
 base_url = "http://localhost:6969"
 
 [[tests]]
-name = "create user"
+name = "CreateUser"
 method = "POST"
 url = "/users/22"
 body = { name = "Alice" }
 
 assert_status = 200
-assert_headers = { "Content-Type" = "Application/json" }
+assert_headers = { "Content-Type" = "application/json" }
 assert_jsonpath = { "$.name" = "Alice" }
 
 [[tests]]
-name = "health check"
+name = "HealthCheck"
 method = "GET"
 url = "/health"
 
 assert_status = 200
 
 [[tests]]
-name = "list users"
+name = "ListUsers"
 method = "GET"
 url = "/users"
 

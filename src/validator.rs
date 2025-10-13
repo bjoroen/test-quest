@@ -1,14 +1,13 @@
-use std::collections::HashMap;
 use std::str::FromStr;
-use std::string::ParseError;
 
 use miette::Diagnostic;
 use miette::NamedSource;
-use miette::Report;
 use miette::SourceSpan;
 use reqwest::Method;
-use reqwest::Request;
 use reqwest::Url;
+use reqwest::header::HeaderMap;
+use reqwest::header::HeaderName;
+use reqwest::header::HeaderValue;
 use thiserror::Error;
 use toml::Value;
 
@@ -17,9 +16,9 @@ use crate::parser::Proff;
 pub struct Validator(i32);
 
 #[derive(Debug, Clone)]
-pub enum Assertions {
+pub enum Assertion {
     Status(i32),
-    Headers(HashMap<String, String>),
+    Headers(HeaderMap),
 }
 
 pub struct IR {
@@ -27,12 +26,11 @@ pub struct IR {
 }
 #[derive(Clone)]
 pub struct Test {
-    pub id: i32,
     pub name: String,
     pub method: Method,
     pub url: Url,
     pub body: Option<serde_json::Value>,
-    pub assertions: Vec<Assertions>,
+    pub assertions: Vec<Assertion>,
 }
 
 #[derive(Debug, Error, Diagnostic)]
@@ -102,13 +100,13 @@ impl Validator {
                 let body = test.body.clone();
                 let name = test.name.clone();
 
-                let assertions = parse_assertions(&test.assert_status, &test.assert_headers)?;
-
-                let id = self.0;
-                self.0 = self.0 + 1;
+                let assertions = parse_assertions(
+                    &test.assert_status,
+                    &test.assert_headers,
+                    Some((file_name.into(), toml_src.into())),
+                )?;
 
                 Ok(Test {
-                    id,
                     name,
                     body,
                     method,
@@ -167,32 +165,79 @@ fn parse_method(method: &str) -> Result<reqwest::Method, String> {
     Ok(method)
 }
 
-fn parse_assertions(
+pub fn parse_assertions(
     assert_status: &Option<i32>,
-    assert_headers: &Option<toml::Value>,
-) -> Result<Vec<Assertions>, ValidationError> {
+    assert_headers: &Option<Value>,
+    src: Option<(String, String)>, // (filename, source contents)
+) -> Result<Vec<Assertion>, ValidationError> {
     let mut assert_vec = vec![];
 
     if let Some(status) = assert_status {
-        assert_vec.push(Assertions::Status(*status));
+        assert_vec.push(Assertion::Status(*status));
     }
 
     if let Some(value) = assert_headers {
-        let mut header_map = HashMap::new();
+        let mut header_map = HeaderMap::new();
+
         match value {
             Value::Table(map) => {
                 for (k, v) in map {
-                    match v.as_str() {
-                        Some(v) => header_map.insert(k.clone(), v.to_string()),
-                        None => todo!(),
-                    };
+                    let v_str = v.as_str().ok_or_else(|| ValidationError {
+                        field: k.clone(),
+                        message: format!("Header value must be a string, got {v:?}"),
+                        src: src
+                            .as_ref()
+                            .map(|(name, content)| NamedSource::new(name.clone(), content.clone())),
+                        span: find_key_span(src.as_ref(), k),
+                    })?;
+
+                    let name =
+                        HeaderName::from_bytes(k.as_bytes()).map_err(|e| ValidationError {
+                            field: k.clone(),
+                            message: format!("Invalid header name `{k}`: {e}"),
+                            src: src.as_ref().map(|(name, content)| {
+                                NamedSource::new(name.clone(), content.clone())
+                            }),
+                            span: find_key_span(src.as_ref(), k),
+                        })?;
+
+                    let value = HeaderValue::from_str(v_str).map_err(|e| ValidationError {
+                        field: k.clone(),
+                        message: format!("Invalid header value for `{k}`: {e}"),
+                        src: src
+                            .as_ref()
+                            .map(|(name, content)| NamedSource::new(name.clone(), content.clone())),
+                        span: find_value_span(src.as_ref(), v_str),
+                    })?;
+
+                    header_map.insert(name, value);
                 }
             }
-            _ => todo!(),
+            _ => {
+                return Err(ValidationError {
+                    field: "headers".to_string(),
+                    message: format!("Expected a table for headers, got {value:?}"),
+                    src: src
+                        .as_ref()
+                        .map(|(name, content)| NamedSource::new(name.clone(), content.clone())),
+                    span: None,
+                });
+            }
         }
 
-        assert_vec.push(Assertions::Headers(header_map))
+        assert_vec.push(Assertion::Headers(header_map));
     }
 
     Ok(assert_vec)
+}
+fn find_key_span(src: Option<&(String, String)>, key: &str) -> Option<SourceSpan> {
+    let (_, content) = src?;
+    let start = content.find(key)?;
+    Some(SourceSpan::new(start.into(), key.len()))
+}
+
+fn find_value_span(src: Option<&(String, String)>, value: &str) -> Option<SourceSpan> {
+    let (_, content) = src?;
+    let start = content.find(value)?;
+    Some(SourceSpan::new(start.into(), value.len()))
 }
