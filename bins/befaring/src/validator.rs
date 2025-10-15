@@ -11,7 +11,7 @@ use reqwest::header::HeaderValue;
 use thiserror::Error;
 use toml::Value;
 
-use crate::parser::Proff;
+use crate::parser::Befaring;
 
 pub struct Validator;
 
@@ -57,11 +57,11 @@ impl Validator {
 
     pub fn validate(
         &mut self,
-        proff: &Proff,
+        befaring: &Befaring,
         toml_src: &str,
         file_name: &str,
     ) -> miette::Result<IR, ValidationError> {
-        let tests: Vec<Test> = proff
+        let tests: Vec<Test> = befaring
             .tests
             .iter()
             .map(|test| {
@@ -73,14 +73,14 @@ impl Validator {
                         span: find_span(&test.method, toml_src),
                     })?;
 
-                let url = parse_url(&proff.setup.base_url, &test.url).map_err(|e| match e {
+                let url = parse_url(&befaring.setup.base_url, &test.url).map_err(|e| match e {
                     ParseUrlError::SetupUrlEndsWithSlash => ValidationError {
                         field: "setup.url".into(),
                         message: "The base URL from setup can’t end with a /, and each URL in \
                                   test must start with one"
                             .into(),
                         src: Some(NamedSource::new(file_name, toml_src.to_string())),
-                        span: find_span(&proff.setup.base_url, toml_src),
+                        span: find_span(&befaring.setup.base_url, toml_src),
                     },
                     ParseUrlError::PathUrlMissingSlash => ValidationError {
                         field: format!("{}/url", test.name),
@@ -90,7 +90,7 @@ impl Validator {
                         span: find_span(&test.url, toml_src),
                     },
                     ParseUrlError::ParseIntoUrlFailed(parse_error) => ValidationError {
-                        field: format!("{}.url", &proff.setup.base_url),
+                        field: format!("{}.url", &befaring.setup.base_url),
                         message: parse_error.to_string(),
                         src: None,
                         span: None,

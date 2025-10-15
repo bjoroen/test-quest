@@ -13,7 +13,7 @@ use crate::asserter::AssertResult;
 use crate::asserter::Asserter;
 use crate::asserter::TestResult;
 use crate::cli::Cli;
-use crate::parser::Proff;
+use crate::parser::Befaring;
 use crate::runner::RunnerResult;
 use crate::runner::run_http_tests;
 use crate::validator::ValidationError;
@@ -26,7 +26,7 @@ mod runner;
 mod validator;
 
 #[derive(Error, Debug, Diagnostic)]
-pub enum ProffError {
+pub enum BefaringError {
     #[error("Failed to read toml file")]
     FileError(#[from] std::io::Error),
 
@@ -106,16 +106,17 @@ async fn main() -> Result<()> {
     let (tx, rx) = flume::unbounded::<RunnerResult>();
     let (outputter_tx, outputter_rx) = flume::unbounded::<(String, Arc<[AssertResult]>)>();
 
-    let contents = std::fs::read_to_string(&cli.path).map_err(ProffError::FileError)?;
-    let proff: Proff = toml::from_str(&contents).map_err(ProffError::TomlParsing)?;
+    let contents = std::fs::read_to_string(&cli.path).map_err(BefaringError::FileError)?;
+    let befaring: Befaring = toml::from_str(&contents).map_err(BefaringError::TomlParsing)?;
 
-    let db = proff.db.clone();
+    let db = befaring.db.clone();
+    let setup_command = befaring.setup.command.clone();
 
     let mut validator = Validator::new();
 
     let tests = validator
-        .validate(&proff, &contents, &cli.path)
-        .map_err(ProffError::ValidationError)?;
+        .validate(&befaring, &contents, &cli.path)
+        .map_err(BefaringError::ValidationError)?;
 
     let n_tests = tests.tests.len();
 

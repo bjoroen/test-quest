@@ -1,7 +1,7 @@
 use serde::Deserialize;
 
 #[derive(Deserialize, Debug)]
-pub struct Proff {
+pub struct Befaring {
     pub setup: Setup,
     pub db: Db,
     pub tests: Vec<Test>,
@@ -18,6 +18,7 @@ pub struct Db {
 pub struct Setup {
     pub mode: String,
     pub base_url: String,
+    pub command: String,
 }
 
 #[derive(Deserialize, Debug)]
