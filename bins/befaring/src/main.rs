@@ -1,18 +1,32 @@
 #![allow(clippy::result_large_err)]
+#![allow(dead_code)]
 
+use std::process::Stdio;
 use std::sync::Arc;
+use std::time::Duration;
 
 use clap::Parser;
-use console::Style;
-use flume::Receiver;
 use miette::Diagnostic;
 use miette::Result;
+use reqwest::Client;
+use sqlx::Pool;
+use sqlx::pool;
+use sqlx::postgres::PgPoolOptions;
+use testcontainers::ContainerAsync;
+use testcontainers::ImageExt;
+use testcontainers::core::WaitFor;
+use testcontainers::runners::AsyncRunner;
+use testcontainers_modules::postgres;
+use testcontainers_modules::postgres::Postgres;
 use thiserror::Error;
+use tokio::process::Command;
+use tokio::sync::Mutex;
+use tokio::time::sleep;
 
 use crate::asserter::AssertResult;
 use crate::asserter::Asserter;
-use crate::asserter::TestResult;
 use crate::cli::Cli;
+use crate::outputter::OutPutter;
 use crate::parser::Befaring;
 use crate::runner::RunnerResult;
 use crate::runner::run_http_tests;
@@ -21,6 +35,7 @@ use crate::validator::Validator;
 
 mod asserter;
 mod cli;
+mod outputter;
 mod parser;
 mod runner;
 mod validator;
@@ -41,62 +56,79 @@ pub enum BefaringError {
     AssertError,
 }
 
-struct OutPutter;
+struct AppHandle {
+    child: Arc<Mutex<tokio::process::Child>>,
+    database_container: ContainerAsync<Postgres>,
+}
 
-impl OutPutter {
-    pub async fn start(
-        rx: Receiver<(String, Arc<[AssertResult]>)>,
-        test_path: &str,
-        n_tests: usize,
-    ) {
-        let style = Style::new().bold().cyan();
-        let open_text =
-            &format!("Running test file: {test_path} Found {n_tests} tests: Running...");
-        let open_text = style.apply_to(open_text);
+async fn start_db_and_app() -> Result<AppHandle, ()> {
+    let database_container = postgres::Postgres::default().start().await.unwrap();
+    let host_port = database_container.get_host_port_ipv4(5432).await.unwrap();
 
-        println!("{open_text}");
-        let mut i = 1;
-        let mut failed_tests: Vec<(String, AssertResult)> = vec![];
-        while let Ok((name, result)) = rx.recv_async().await {
-            for r in result.iter() {
-                match r.status {
-                    TestResult::Pass => {
-                        println!(
-                            "[{i}/{n_tests}] {}  {name}: {} {}",
-                            console::style("✔").green().bold(),
-                            r.actual,
-                            console::style("PASS!").green().bold(),
-                        )
-                    }
-                    TestResult::Fail => {
-                        failed_tests.push((name.clone(), r.clone()));
-                        println!(
-                            "[{i}/{n_tests}] {}  {name}: {} {}",
-                            console::style("╳").red().bold(),
-                            r.expected,
-                            console::style("FAILED!").red().bold(),
-                        )
-                    }
-                }
-            }
+    database_container.stdout(true);
+    database_container.stderr(true);
 
-            i += 1;
-        }
+    let database_url = format!("postgres://postgres:postgres@127.0.0.1:{}", host_port);
+    println!("Database URL: {}", database_url);
 
-        if !failed_tests.is_empty() {
-            println!();
-            println!(
-                "{}",
-                console::style("Summary of Failed Tests:").bold().red()
-            );
-            for (idx, result) in failed_tests.iter().enumerate() {
-                println!("\n{} {}. {}", idx + 1, result.0, result.1);
-            }
-        } else {
-            println!();
-            println!("{}", console::style("All tests passed! 🎉").bold().green());
-        }
+    if wait_for_db(&database_url).await.is_err() {
+        panic!("DB timeout");
+    };
+
+    let child = Command::new("cargo")
+        .args(["run", "-p", "test_app"])
+        .env("DATABASE_URL", &database_url)
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .spawn()
+        .expect("Failed to spawn test_app");
+
+    let child = Arc::new(Mutex::new(child));
+
+    if (wait_for_app_ready("http://127.0.0.1:6969/health", 30).await).is_err() {
+        let mut lock = child.lock().await;
+        let _ = lock.kill().await;
+        panic!("app not ready");
     }
+
+    Ok(AppHandle {
+        child,
+        database_container,
+    })
+}
+
+async fn wait_for_db(database_url: &str) -> Result<(), ()> {
+    for _ in 0..30 {
+        if let Ok(pool) = PgPoolOptions::new()
+            .max_connections(10)
+            .connect(database_url)
+            .await
+            && sqlx::query("SELECT 1").execute(&pool).await.is_ok()
+        {
+            return Ok(());
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    }
+    Err(())
+}
+
+async fn wait_for_app_ready(url: &str, timeout_secs: u64) -> Result<(), ()> {
+    let client = Client::new();
+    let mut elapsed = 0;
+
+    while elapsed < timeout_secs {
+        if let Ok(resp) = client.get(url).send().await
+            && resp.status().is_success()
+        {
+            println!("App is ready!");
+            return Ok(());
+        }
+
+        sleep(Duration::from_secs(1)).await;
+        elapsed += 1;
+    }
+
+    Err(())
 }
 
 #[tokio::main]
@@ -109,9 +141,6 @@ async fn main() -> Result<()> {
     let contents = std::fs::read_to_string(&cli.path).map_err(BefaringError::FileError)?;
     let befaring: Befaring = toml::from_str(&contents).map_err(BefaringError::TomlParsing)?;
 
-    let db = befaring.db.clone();
-    let setup_command = befaring.setup.command.clone();
-
     let mut validator = Validator::new();
 
     let tests = validator
@@ -119,6 +148,10 @@ async fn main() -> Result<()> {
         .map_err(BefaringError::ValidationError)?;
 
     let n_tests = tests.tests.len();
+
+    let db = befaring.db.clone();
+    let setup_command = befaring.setup.command.clone();
+    let app_handle = start_db_and_app().await.unwrap();
 
     let outputter_rx_printter = outputter_rx.clone();
     let outputter_handle = tokio::spawn(async move {
@@ -132,6 +165,8 @@ async fn main() -> Result<()> {
 
     drop(outputter_tx);
     let _ = futures::join!(runner_jh, asserter_jh, outputter_handle);
+    let mut lock = app_handle.child.lock().await;
+    let _ = lock.kill().await;
 
     Ok(())
 }

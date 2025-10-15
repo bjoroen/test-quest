@@ -16,3 +16,6 @@ tokio  = { version =  "1.47.1", features = ["full"] }
 toml  = { version =  "0.9.7", features = [] }
 url  = { version =  "2.5.7", features = [] }
 console  = { version =  "0.16.1", features = [] }
+testcontainers  = { version =  "0.25.0", features = [] }
+testcontainers-modules  = { version =  "0.13.0", features = ["postgres"] }
+sqlx = { version = "0.8", features = ["postgres", "runtime-tokio-native-tls", "macros"] }

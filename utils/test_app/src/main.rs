@@ -1,5 +1,3 @@
-use sqlx::Executor;
-use sqlx::{PgPool, Row};
 use std::env;
 use std::net::SocketAddr;
 use std::time::Duration;
@@ -10,10 +8,12 @@ use axum::extract::Path;
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::routing::get;
-use axum::routing::post;
 use serde::Deserialize;
 use serde::Serialize;
 use serde_json::Value;
+use sqlx::PgPool;
+use sqlx::Row;
+use sqlx::postgres::PgPoolOptions;
 use tokio::time::sleep;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -29,14 +29,13 @@ async fn main() -> anyhow::Result<()> {
         env::var("DATABASE_URL").expect("DATABASE_URL must be set in environment variables");
 
     // initialize Postgres pool
-    let pool = PgPool::connect(&database_url).await?;
 
-    let setup_databse = "CREATE TABLE IF NOT EXISTS users (
-    id BIGINT PRIMARY KEY,
-    name TEXT NOT NULL
-    );";
+    let pool = PgPoolOptions::new()
+        .max_connections(10) // increase from default 5
+        .connect(&database_url)
+        .await?;
 
-    let _ = pool.execute(setup_databse).await.unwrap();
+    let _ = dbg!(setup_database(&pool).await);
 
     // build router and inject pool as shared state
     let app = Router::new()
@@ -46,18 +45,17 @@ async fn main() -> anyhow::Result<()> {
         .with_state(pool.clone());
 
     // run app
-    let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
+    let addr = SocketAddr::from(([127, 0, 0, 1], 6969));
     println!("🚀 API running at http://{addr}");
 
     // run our app with hyper, listening globally on port 3000
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:6969").await.unwrap();
     axum::serve(listener, app).await.unwrap();
 
     Ok(())
 }
 
 async fn health() -> &'static str {
-    sleep(Duration::from_secs(2)).await;
     "ok"
 }
 
@@ -91,6 +89,8 @@ async fn list_users(State(pool): State<PgPool>) -> Json<Value> {
         .map(|r| serde_json::json!({ "id": r.get::<i64,_>("id"), "name": r.get::<String,_>("name") }))
         .collect();
 
+    dbg!(&users);
+
     Json(serde_json::json!(users))
 }
 
@@ -108,4 +108,54 @@ async fn get_user(
         id: row.get("id"),
         name: row.get("name"),
     }))
+}
+
+async fn setup_database(pool: &PgPool) -> anyhow::Result<()> {
+    // 1️⃣ Create the table
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS users (
+            id BIGINT PRIMARY KEY,
+            name TEXT NOT NULL
+        )
+        "#,
+    )
+    .execute(pool)
+    .await?;
+
+    // 2️⃣ Insert users individually or in a single multi-row insert
+    sqlx::query(
+        r#"
+        INSERT INTO users (id, name) VALUES ($1, $2)
+        ON CONFLICT (id) DO NOTHING
+        "#,
+    )
+    .bind(1i64)
+    .bind("Alice")
+    .execute(pool)
+    .await?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO users (id, name) VALUES ($1, $2)
+        ON CONFLICT (id) DO NOTHING
+        "#,
+    )
+    .bind(2i64)
+    .bind("Bob")
+    .execute(pool)
+    .await?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO users (id, name) VALUES ($1, $2)
+        ON CONFLICT (id) DO NOTHING
+        "#,
+    )
+    .bind(3i64)
+    .bind("Charlie")
+    .execute(pool)
+    .await?;
+
+    Ok(())
 }
