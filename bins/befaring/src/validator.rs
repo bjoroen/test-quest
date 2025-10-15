@@ -13,7 +13,7 @@ use toml::Value;
 
 use crate::parser::Proff;
 
-pub struct Validator(i32);
+pub struct Validator;
 
 #[derive(Debug, Clone)]
 pub enum Assertion {
@@ -52,7 +52,7 @@ fn find_span(needle: &str, toml_src: &str) -> Option<SourceSpan> {
 
 impl Validator {
     pub fn new() -> Self {
-        Self(0)
+        Self
     }
 
     pub fn validate(

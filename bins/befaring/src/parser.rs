@@ -3,7 +3,15 @@ use serde::Deserialize;
 #[derive(Deserialize, Debug)]
 pub struct Proff {
     pub setup: Setup,
+    pub db: Db,
     pub tests: Vec<Test>,
+}
+
+#[derive(Clone, Deserialize, Debug)]
+pub struct Db {
+    db_type: String,
+    migrations: String,
+    runtime: String,
 }
 
 #[derive(Deserialize, Debug)]

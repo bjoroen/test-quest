@@ -1,6 +1,12 @@
 [setup]
 mode = "external"
 base_url = "http://localhost:6969"
+command = "cargo r -p test_app"
+
+[db]
+db_type = "postgres"
+migrations = "./migrations"
+runtime = "docker"
 
 [[tests]]
 name = "CreateUser"

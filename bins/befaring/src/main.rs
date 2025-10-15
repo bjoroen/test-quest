@@ -3,9 +3,7 @@
 use std::sync::Arc;
 
 use clap::Parser;
-use console::Emoji;
 use console::Style;
-use console::Term;
 use flume::Receiver;
 use miette::Diagnostic;
 use miette::Result;
@@ -110,6 +108,8 @@ async fn main() -> Result<()> {
 
     let contents = std::fs::read_to_string(&cli.path).map_err(ProffError::FileError)?;
     let proff: Proff = toml::from_str(&contents).map_err(ProffError::TomlParsing)?;
+
+    let db = proff.db.clone();
 
     let mut validator = Validator::new();
 
