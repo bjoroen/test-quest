@@ -35,18 +35,17 @@ expect_jsonpath = { "$.users[0].name" = "Alice" }
 
 ## Roadmap / TODO
 
- - [ ] __Basic runner__
+ - [X] __Basic runner__
 
-    - Parse TOML test files
-    - Run HTTP requests against a configured server
-    - Assert status codes and header values
-    - Print test results in a nice way
+    - [X] Parse TOML test files
+    - [X] Run HTTP requests against a configured server
+    - [X] Assert status codes and header values
+    - [X] Print test results in a nice way
 
+ - [X] __CLI__
 
- - [ ] __CLI__
-
-    - Nice looking error messages with [Miette Error](https://github.com/zkat/miette)
-    - Options for filtering tests, updating snapshots, verbose output
+    - [X] Nice looking error messages with [Miette Error](https://github.com/zkat/miette)
+    - [ ] Options for filtering tests, updating snapshots, verbose output
 
  - [ ] __Database support__
 
@@ -60,6 +59,12 @@ expect_jsonpath = { "$.users[0].name" = "Alice" }
     - External mode (assume running server)
     - Binary mode (spawn local binary, wait for readiness)
 
+ - [ ] __Snapshots__
+
+    - Capture full HTTP responses or DB state as snapshots
+    - Compare future runs against stored snapshots
+    - Update snapshots when intentional changes are made
+
  - [ ] __Mock support__
 
     - Define mock services in TOML
@@ -70,12 +75,6 @@ expect_jsonpath = { "$.users[0].name" = "Alice" }
     - Generate request bodies using strategies (string, int, regex, uuid, etc.)
     - Run multiple randomized inputs against the API
     - Assert invariants hold for all runs
-
- - [ ] __Snapshots__
-
-    - Capture full HTTP responses or DB state as snapshots
-    - Compare future runs against stored snapshots
-    - Update snapshots when intentional changes are made
 
  - [ ] __Fuzzing__
 

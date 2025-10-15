@@ -68,20 +68,16 @@ impl Display for AssertResult {
                     console::style("FAIL!").red().bold(),
                 )?;
                 writeln!(f, "  {}", console::style("Expected headers:").green())?;
-                print_headers(f, expected_headers, console::Color::Green)?;
+                print_headers(f, expected_headers)?;
                 writeln!(f, "  {}", console::style("Actual headers:").red())?;
-                print_headers(f, actual_headers, console::Color::Red)
+                print_headers(f, actual_headers)
             }
             _ => todo!(),
         }
     }
 }
 
-fn print_headers(
-    f: &mut fmt::Formatter<'_>,
-    headers: &HeaderMap,
-    color: console::Color,
-) -> fmt::Result {
+fn print_headers(f: &mut fmt::Formatter<'_>, headers: &HeaderMap) -> fmt::Result {
     for (k, v) in headers.iter() {
         let value = v.to_str().unwrap_or("<invalid utf8>");
         writeln!(
@@ -128,9 +124,7 @@ pub trait Assert {
 
 impl Assert for RunnerResult {
     fn assert(&self) -> Arc<[AssertResult]> {
-        let Ok(request) = &self.request else {
-            todo!();
-        };
+        let Ok(request) = &self.request else { todo!() };
 
         Arc::from(
             self.assertions

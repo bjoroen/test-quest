@@ -8,9 +8,10 @@ method = "POST"
 url = "/users/22"
 body = { name = "Alice" }
 
-assert_status = 200
-assert_headers = { "Content-Type" = "application/json" }
-assert_jsonpath = { "$.name" = "Alice" }
+[assert]
+status = 200
+headers = { "Content-Type" = "application/json" }
+jsonpath = { "$.name" = "Alice" }
 
 [[tests]]
 name = "HealthCheck"
