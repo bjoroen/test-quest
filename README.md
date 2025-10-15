@@ -1,4 +1,4 @@
-# Proff (working name)
+Befaring
 
 A declarative end-to-end testing framework for APIs.
 Tests are defined in TOML files, so they are language-agnostic and easy to share across projects.
