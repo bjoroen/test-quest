@@ -13,12 +13,27 @@ use toml::Value;
 
 use crate::parser::Befaring;
 
-pub struct Validator;
+pub struct Validator {
+    befaring: Befaring,
+    toml_src: String,
+    file_name: String,
+}
 
 #[derive(Debug, Clone)]
 pub enum Assertion {
     Status(i32),
     Headers(HeaderMap),
+}
+
+pub struct EnvSetup {
+    pub base_url: String,
+    pub command: String,
+    pub args: Option<Vec<String>>,
+    pub ready_when: String,
+    pub db_type: String,
+    pub migration_dir: Option<String>,
+    pub db_port: Option<u16>,
+    pub database_url_env: String,
 }
 
 pub struct IR {
@@ -51,46 +66,60 @@ fn find_span(needle: &str, toml_src: &str) -> Option<SourceSpan> {
 }
 
 impl Validator {
-    pub fn new() -> Self {
-        Self
+    pub fn new(befaring: &Befaring, toml_src: &str, file_name: &str) -> Self {
+        Self {
+            befaring: befaring.clone(),
+            toml_src: toml_src.into(),
+            file_name: file_name.into(),
+        }
     }
 
-    pub fn validate(
-        &mut self,
-        befaring: &Befaring,
-        toml_src: &str,
-        file_name: &str,
-    ) -> miette::Result<IR, ValidationError> {
-        let tests: Vec<Test> = befaring
+    pub fn validate(&mut self) -> miette::Result<(IR, EnvSetup), ValidationError> {
+        let tests = self.validate_tests()?;
+        let setup = self.validate_setup()?;
+
+        Ok((tests, setup))
+    }
+
+    fn validate_tests(&self) -> Result<IR, ValidationError> {
+        let tests: Vec<Test> = self
+            .befaring
             .tests
             .iter()
             .map(|test| {
+                let file_name = self.file_name.clone();
+                let toml_src = self.toml_src.clone();
+                let base_url = self.befaring.setup.base_url.clone();
+
                 let method =
                     parse_method(&test.method.to_uppercase()).map_err(|e| ValidationError {
                         field: format!("{} - method", test.name),
                         message: e.to_string(),
-                        src: Some(NamedSource::new(file_name, toml_src.to_string())),
-                        span: find_span(&test.method, toml_src),
+                        src: Some(NamedSource::new(
+                            self.file_name.clone(),
+                            self.toml_src.to_string(),
+                        )),
+                        span: find_span(&test.method, &self.toml_src),
                     })?;
 
-                let url = parse_url(&befaring.setup.base_url, &test.url).map_err(|e| match e {
+                let url = parse_url(&base_url, &test.url).map_err(|e| match e {
                     ParseUrlError::SetupUrlEndsWithSlash => ValidationError {
                         field: "setup.url".into(),
                         message: "The base URL from setup can’t end with a /, and each URL in \
                                   test must start with one"
                             .into(),
-                        src: Some(NamedSource::new(file_name, toml_src.to_string())),
-                        span: find_span(&befaring.setup.base_url, toml_src),
+                        src: Some(NamedSource::new(&file_name, toml_src.to_string())),
+                        span: find_span(&base_url, &toml_src),
                     },
                     ParseUrlError::PathUrlMissingSlash => ValidationError {
                         field: format!("{}/url", test.name),
                         message: "The URL field in a test is required to begin with a leading /."
                             .into(),
-                        src: Some(NamedSource::new(file_name, toml_src.to_string())),
-                        span: find_span(&test.url, toml_src),
+                        src: Some(NamedSource::new(&file_name, toml_src.to_string())),
+                        span: find_span(&test.url, &toml_src),
                     },
                     ParseUrlError::ParseIntoUrlFailed(parse_error) => ValidationError {
-                        field: format!("{}.url", &befaring.setup.base_url),
+                        field: format!("{}.url", &base_url),
                         message: parse_error.to_string(),
                         src: None,
                         span: None,
@@ -103,7 +132,7 @@ impl Validator {
                 let assertions = parse_assertions(
                     &test.assert_status,
                     &test.assert_headers,
-                    Some((file_name.into(), toml_src.into())),
+                    Some((file_name, toml_src)),
                 )?;
 
                 Ok(Test {
@@ -117,6 +146,24 @@ impl Validator {
             .collect::<Result<_, _>>()?;
 
         Ok(IR { tests })
+    }
+
+    fn validate_setup(&self) -> Result<EnvSetup, ValidationError> {
+        Ok(EnvSetup {
+            base_url: self.befaring.setup.base_url.clone(),
+            command: self.befaring.setup.command.clone(),
+            args: self.befaring.setup.args.clone(),
+            ready_when: self.befaring.setup.ready_when.clone(),
+            db_type: self.befaring.db.db_type.clone(),
+            migration_dir: Some(self.befaring.db.migration_dir.clone()),
+            db_port: self.befaring.db.port,
+            database_url_env: self
+                .befaring
+                .setup
+                .database_url_env
+                .clone()
+                .unwrap_or("DATABASE_URL".into()),
+        })
     }
 }
 

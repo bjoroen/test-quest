@@ -1,23 +1,21 @@
 [setup]
-mode = "external"
 base_url = "http://localhost:6969"
-command = "cargo r -p test_app"
-ready_when = ""
+command = "cargo"
+args = ["r", "-p", "test_app"]
+ready_when = "/health"
+database_url_env = "DATABASE_URL"
 
 [db]
 db_type = "postgres"
-migrations = "./migrations"
-runtime = "docker"
+migration_dir = "./utils/test_app/migrations"
 
 [[tests]]
-name = "CreateUser"
+name = "GetUser"
 method = "GET"
 url = "/users/1"
 body = { name = "Alice" }
-
-[assert]
-status = 200
-headers = { "Content-Type" = "application/json" }
+assert_status = 200
+assert_headers = { "Content-Type" = "application/json" }
 
 [[tests]]
 name = "HealthCheck"
@@ -29,4 +27,10 @@ assert_status = 200
 name = "ListUsers"
 method = "GET"
 url = "/users"
-assert_status = 400
+assert_status = 200
+
+[[tests]]
+name = "CreateUser"
+method = "POST"
+url = "/users"
+assert_status = 201

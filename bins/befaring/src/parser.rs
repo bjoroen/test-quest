@@ -1,6 +1,6 @@
 use serde::Deserialize;
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct Befaring {
     pub setup: Setup,
     pub db: Db,
@@ -9,19 +9,21 @@ pub struct Befaring {
 
 #[derive(Clone, Deserialize, Debug)]
 pub struct Db {
-    db_type: String,
-    migrations: String,
-    runtime: String,
+    pub db_type: String,
+    pub migration_dir: String,
+    pub port: Option<u16>,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct Setup {
-    pub mode: String,
     pub base_url: String,
     pub command: String,
+    pub args: Option<Vec<String>>,
+    pub ready_when: String,
+    pub database_url_env: Option<String>,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct Test {
     pub name: String,
     pub method: String,

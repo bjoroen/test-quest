@@ -5,6 +5,7 @@ use flume::Sender;
 use reqwest::Client;
 use reqwest::Error;
 use reqwest::Response;
+use sqlx::Pool;
 use thiserror::Error;
 use tokio::task;
 
@@ -24,7 +25,11 @@ pub struct RunnerResult {
     pub assertions: Vec<Assertion>,
 }
 
-pub async fn run_http_tests(tests: Vec<Test>, tx: Sender<RunnerResult>) -> Result<(), RunnerError> {
+pub async fn run_http_tests(
+    tests: Vec<Test>,
+    tx: Sender<RunnerResult>,
+    _pool: Pool<sqlx::Any>,
+) -> Result<(), RunnerError> {
     let client = Client::new();
 
     tests.into_iter().for_each(|test| {

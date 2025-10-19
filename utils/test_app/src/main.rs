@@ -1,6 +1,5 @@
 use std::env;
 use std::net::SocketAddr;
-use std::time::Duration;
 
 use axum::Json;
 use axum::Router;
@@ -8,13 +7,13 @@ use axum::extract::Path;
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::routing::get;
+use axum::routing::post;
 use serde::Deserialize;
 use serde::Serialize;
 use serde_json::Value;
 use sqlx::PgPool;
 use sqlx::Row;
 use sqlx::postgres::PgPoolOptions;
-use tokio::time::sleep;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 struct User {
@@ -35,11 +34,11 @@ async fn main() -> anyhow::Result<()> {
         .connect(&database_url)
         .await?;
 
-    let _ = dbg!(setup_database(&pool).await);
-
     // build router and inject pool as shared state
     let app = Router::new()
         .route("/health", get(health))
+        .route("/ready", get(ready))
+        .route("/users", post(create_user))
         .route("/users", get(list_users))
         .route("/users/{id}", get(get_user))
         .with_state(pool.clone());
@@ -47,6 +46,7 @@ async fn main() -> anyhow::Result<()> {
     // run app
     let addr = SocketAddr::from(([127, 0, 0, 1], 6969));
     println!("🚀 API running at http://{addr}");
+    eprintln!("here is some stderr outout");
 
     // run our app with hyper, listening globally on port 3000
     let listener = tokio::net::TcpListener::bind("0.0.0.0:6969").await.unwrap();
@@ -56,16 +56,23 @@ async fn main() -> anyhow::Result<()> {
 }
 
 async fn health() -> &'static str {
+    println!("This is stdout");
+    eprintln!("this is stderr");
     "ok"
 }
 
-async fn create_user(
-    Json(payload): Json<User>,
-    State(pool): State<PgPool>,
-) -> (StatusCode, Json<User>) {
+async fn ready() -> &'static str {
+    println!("This is stdout from ready");
+    eprintln!("this is stderr from ready");
+    "ok"
+}
+
+async fn create_user(State(pool): State<PgPool>) -> (StatusCode, Json<User>) {
+    println!("This is stdout from create user");
+    eprintln!("this is stderr from create user");
     let row = sqlx::query("INSERT INTO users (id, name) VALUES ($1, $2) RETURNING id, name")
-        .bind(payload.id)
-        .bind(&payload.name)
+        .bind(11)
+        .bind("new_name")
         .fetch_one(&pool)
         .await
         .expect("Failed to insert user");
@@ -75,7 +82,7 @@ async fn create_user(
         name: row.get("name"),
     };
 
-    (StatusCode::OK, Json(user))
+    (StatusCode::CREATED, Json(user))
 }
 
 async fn list_users(State(pool): State<PgPool>) -> Json<Value> {
@@ -88,8 +95,6 @@ async fn list_users(State(pool): State<PgPool>) -> Json<Value> {
         .into_iter()
         .map(|r| serde_json::json!({ "id": r.get::<i64,_>("id"), "name": r.get::<String,_>("name") }))
         .collect();
-
-    dbg!(&users);
 
     Json(serde_json::json!(users))
 }
@@ -108,54 +113,4 @@ async fn get_user(
         id: row.get("id"),
         name: row.get("name"),
     }))
-}
-
-async fn setup_database(pool: &PgPool) -> anyhow::Result<()> {
-    // 1️⃣ Create the table
-    sqlx::query(
-        r#"
-        CREATE TABLE IF NOT EXISTS users (
-            id BIGINT PRIMARY KEY,
-            name TEXT NOT NULL
-        )
-        "#,
-    )
-    .execute(pool)
-    .await?;
-
-    // 2️⃣ Insert users individually or in a single multi-row insert
-    sqlx::query(
-        r#"
-        INSERT INTO users (id, name) VALUES ($1, $2)
-        ON CONFLICT (id) DO NOTHING
-        "#,
-    )
-    .bind(1i64)
-    .bind("Alice")
-    .execute(pool)
-    .await?;
-
-    sqlx::query(
-        r#"
-        INSERT INTO users (id, name) VALUES ($1, $2)
-        ON CONFLICT (id) DO NOTHING
-        "#,
-    )
-    .bind(2i64)
-    .bind("Bob")
-    .execute(pool)
-    .await?;
-
-    sqlx::query(
-        r#"
-        INSERT INTO users (id, name) VALUES ($1, $2)
-        ON CONFLICT (id) DO NOTHING
-        "#,
-    )
-    .bind(3i64)
-    .bind("Charlie")
-    .execute(pool)
-    .await?;
-
-    Ok(())
 }
