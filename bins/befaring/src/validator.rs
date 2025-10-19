@@ -6,12 +6,19 @@ use miette::SourceSpan;
 use reqwest::Method;
 use reqwest::Url;
 use reqwest::header::HeaderMap;
-use reqwest::header::HeaderName;
-use reqwest::header::HeaderValue;
 use thiserror::Error;
-use toml::Value;
 
+mod parser_assertion;
+
+use crate::parser;
 use crate::parser::Befaring;
+use crate::parser::Hook;
+
+// Error messages for parsing URLs
+const BASE_URL_ENDS_WITH: &str =
+    "The base URL from setup can’t end with a /, and each URL in test must start with one";
+const PATH_URL_MISSING_SLASH: &str =
+    "The URL field in a test is required to begin with a leading /.";
 
 pub struct Validator {
     befaring: Befaring,
@@ -23,6 +30,11 @@ pub struct Validator {
 pub enum Assertion {
     Status(i32),
     Headers(HeaderMap),
+    Sql {
+        query: String,
+        expect: String,
+        got: Option<String>,
+    },
 }
 
 pub struct EnvSetup {
@@ -37,13 +49,29 @@ pub struct EnvSetup {
 }
 
 pub struct IR {
-    pub tests: Vec<Test>,
+    pub before_each_group: Option<BeforeEach>,
+    pub tests: Vec<TestGroups>,
 }
+
+pub struct TestGroups {
+    pub name: String,
+    pub before_group: Option<BeforeEach>,
+    pub before_each_test: Option<BeforeEach>,
+    pub tests: Vec<ValidatedTests>,
+}
+
+pub struct BeforeEach {
+    pub reset_db: Option<bool>,
+    pub sql: Option<Vec<String>>,
+}
+
 #[derive(Clone)]
-pub struct Test {
+pub struct ValidatedTests {
+    pub before_run: Option<Vec<String>>,
     pub name: String,
     pub method: Method,
     pub url: Url,
+    pub headers: HeaderMap,
     pub body: Option<serde_json::Value>,
     pub assertions: Vec<Assertion>,
 }
@@ -59,10 +87,18 @@ pub struct ValidationError {
     span: Option<SourceSpan>,
 }
 
-fn find_span(needle: &str, toml_src: &str) -> Option<SourceSpan> {
-    toml_src
-        .find(needle)
-        .map(|start| SourceSpan::new(start.into(), needle.len()))
+macro_rules! validation_err {
+    ($field:expr, $msg:expr, $self:expr, $snippet:expr) => {
+        ValidationError {
+            field: $field.to_string(),
+            message: $msg.to_string(),
+            src: Some(NamedSource::new(
+                $self.file_name.clone(),
+                $self.toml_src.clone(),
+            )),
+            span: find_span($snippet, &$self.toml_src),
+        }
+    };
 }
 
 impl Validator {
@@ -82,70 +118,46 @@ impl Validator {
     }
 
     fn validate_tests(&self) -> Result<IR, ValidationError> {
-        let tests: Vec<Test> = self
+        let before_each_group = self.create_before_each(&self.befaring.before_each_group)?;
+
+        let test_groups = self
             .befaring
-            .tests
+            .test_groups
             .iter()
-            .map(|test| {
+            .map(|group| {
+                let before_each_test = self.create_before_each(&group.before_each_test)?;
+                let before_group = self.create_before_each(&group.before_group)?;
+                let name = group.name.clone();
+
                 let file_name = self.file_name.clone();
                 let toml_src = self.toml_src.clone();
-                let base_url = self.befaring.setup.base_url.clone();
 
-                let method =
-                    parse_method(&test.method.to_uppercase()).map_err(|e| ValidationError {
-                        field: format!("{} - method", test.name),
-                        message: e.to_string(),
-                        src: Some(NamedSource::new(
-                            self.file_name.clone(),
-                            self.toml_src.to_string(),
-                        )),
-                        span: find_span(&test.method, &self.toml_src),
-                    })?;
+                let tests: Vec<ValidatedTests> = group
+                    .tests
+                    .iter()
+                    .map(|test| {
+                        self.create_test(
+                            test,
+                            file_name.as_ref(),
+                            toml_src.as_ref(),
+                            &self.befaring.setup.base_url,
+                        )
+                    })
+                    .collect::<Result<Vec<_>, ValidationError>>()?;
 
-                let url = parse_url(&base_url, &test.url).map_err(|e| match e {
-                    ParseUrlError::SetupUrlEndsWithSlash => ValidationError {
-                        field: "setup.url".into(),
-                        message: "The base URL from setup can’t end with a /, and each URL in \
-                                  test must start with one"
-                            .into(),
-                        src: Some(NamedSource::new(&file_name, toml_src.to_string())),
-                        span: find_span(&base_url, &toml_src),
-                    },
-                    ParseUrlError::PathUrlMissingSlash => ValidationError {
-                        field: format!("{}/url", test.name),
-                        message: "The URL field in a test is required to begin with a leading /."
-                            .into(),
-                        src: Some(NamedSource::new(&file_name, toml_src.to_string())),
-                        span: find_span(&test.url, &toml_src),
-                    },
-                    ParseUrlError::ParseIntoUrlFailed(parse_error) => ValidationError {
-                        field: format!("{}.url", &base_url),
-                        message: parse_error.to_string(),
-                        src: None,
-                        span: None,
-                    },
-                })?;
-
-                let body = test.body.clone();
-                let name = test.name.clone();
-
-                let assertions = parse_assertions(
-                    &test.assert_status,
-                    &test.assert_headers,
-                    Some((file_name, toml_src)),
-                )?;
-
-                Ok(Test {
+                Ok(TestGroups {
                     name,
-                    body,
-                    method,
-                    url,
-                    assertions,
+                    before_each_test,
+                    before_group,
+                    tests,
                 })
             })
-            .collect::<Result<_, _>>()?;
+            .collect::<Result<Vec<_>, ValidationError>>()?;
 
-        Ok(IR { tests })
+        Ok(IR {
+            before_each_group,
+            tests: test_groups,
+        })
     }
 
     fn validate_setup(&self) -> Result<EnvSetup, ValidationError> {
@@ -163,6 +175,81 @@ impl Validator {
                 .database_url_env
                 .clone()
                 .unwrap_or("DATABASE_URL".into()),
+        })
+    }
+
+    fn create_before_each(
+        &self,
+        hook: &Option<Hook>,
+    ) -> Result<Option<BeforeEach>, ValidationError> {
+        if let Some(hook) = hook {
+            Ok(Some(BeforeEach {
+                reset_db: Some(hook.reset.unwrap_or(false)),
+                sql: Some(hook.run_sql.clone().unwrap_or_default()),
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    fn create_test(
+        &self,
+        test: &parser::Test,
+        file_name: &str,
+        toml_src: &str,
+        base_url: &str,
+    ) -> Result<ValidatedTests, ValidationError> {
+        let method = parse_method(&test.method.to_uppercase()).map_err(|e| {
+            validation_err!(format!("{} - method", test.name), e, self, &test.method)
+        })?;
+
+        let url = parse_url(base_url, &test.url).map_err(|e| match e {
+            ParseUrlError::SetupUrlEndsWithSlash => {
+                validation_err!("setup.base_url", BASE_URL_ENDS_WITH, self, &base_url)
+            }
+
+            ParseUrlError::PathUrlMissingSlash => validation_err!(
+                format!("{}/url", test.name),
+                PATH_URL_MISSING_SLASH,
+                self,
+                &test.url
+            ),
+            ParseUrlError::ParseIntoUrlFailed(parse_error) => validation_err!(
+                format!("{}/url", &base_url),
+                parse_error.to_string(),
+                self,
+                &base_url
+            ),
+        })?;
+
+        let body = test.body.clone();
+        let name = test.name.clone();
+        let before_run = test.before_run.clone();
+
+        let headers = if let Some(header_value) = &test.headers {
+            dbg!(parser_assertion::parse_header_map(
+                header_value,
+                Some(&(file_name.to_string(), toml_src.to_string())),
+            ))?
+        } else {
+            HeaderMap::new()
+        };
+
+        let assertions = parser_assertion::parse_assertions(
+            &test.assert_status,
+            &test.assert_headers,
+            &test.assert_sql,
+            Some((file_name, toml_src)),
+        )?;
+
+        Ok(ValidatedTests {
+            before_run,
+            name,
+            body,
+            method,
+            headers,
+            url,
+            assertions,
         })
     }
 }
@@ -212,79 +299,9 @@ fn parse_method(method: &str) -> Result<reqwest::Method, String> {
     Ok(method)
 }
 
-pub fn parse_assertions(
-    assert_status: &Option<i32>,
-    assert_headers: &Option<Value>,
-    src: Option<(String, String)>, // (filename, source contents)
-) -> Result<Vec<Assertion>, ValidationError> {
-    let mut assert_vec = vec![];
-
-    if let Some(status) = assert_status {
-        assert_vec.push(Assertion::Status(*status));
-    }
-
-    if let Some(value) = assert_headers {
-        let mut header_map = HeaderMap::new();
-
-        match value {
-            Value::Table(map) => {
-                for (k, v) in map {
-                    let v_str = v.as_str().ok_or_else(|| ValidationError {
-                        field: k.clone(),
-                        message: format!("Header value must be a string, got {v:?}"),
-                        src: src
-                            .as_ref()
-                            .map(|(name, content)| NamedSource::new(name.clone(), content.clone())),
-                        span: find_key_span(src.as_ref(), k),
-                    })?;
-
-                    let name =
-                        HeaderName::from_bytes(k.as_bytes()).map_err(|e| ValidationError {
-                            field: k.clone(),
-                            message: format!("Invalid header name `{k}`: {e}"),
-                            src: src.as_ref().map(|(name, content)| {
-                                NamedSource::new(name.clone(), content.clone())
-                            }),
-                            span: find_key_span(src.as_ref(), k),
-                        })?;
-
-                    let value = HeaderValue::from_str(v_str).map_err(|e| ValidationError {
-                        field: k.clone(),
-                        message: format!("Invalid header value for `{k}`: {e}"),
-                        src: src
-                            .as_ref()
-                            .map(|(name, content)| NamedSource::new(name.clone(), content.clone())),
-                        span: find_value_span(src.as_ref(), v_str),
-                    })?;
-
-                    header_map.insert(name, value);
-                }
-            }
-            _ => {
-                return Err(ValidationError {
-                    field: "headers".to_string(),
-                    message: format!("Expected a table for headers, got {value:?}"),
-                    src: src
-                        .as_ref()
-                        .map(|(name, content)| NamedSource::new(name.clone(), content.clone())),
-                    span: None,
-                });
-            }
-        }
-
-        assert_vec.push(Assertion::Headers(header_map));
-    }
-
-    Ok(assert_vec)
-}
-fn find_key_span(src: Option<&(String, String)>, key: &str) -> Option<SourceSpan> {
-    let (_, content) = src?;
-    let start = content.find(key)?;
-    Some(SourceSpan::new(start.into(), key.len()))
-}
-
-fn find_value_span(src: Option<&(String, String)>, value: &str) -> Option<SourceSpan> {
-    let (_, content) = src?;
-    let start = content.find(value)?;
-    Some(SourceSpan::new(start.into(), value.len()))
+fn find_span(needle: &str, toml_src: &str) -> Option<SourceSpan> {
+    let pattern = format!("\"{}\"", needle);
+    toml_src
+        .find(&pattern)
+        .map(|start| SourceSpan::new(start.into(), needle.len()))
 }

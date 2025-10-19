@@ -15,8 +15,7 @@ impl OutPutter {
         n_tests: usize,
     ) {
         let style = Style::new().bold().cyan();
-        let open_text =
-            &format!("Running test file: {test_path} Found {n_tests} tests: Running...");
+        let open_text = &format!("Running test file: {test_path} Found {n_tests} tests");
         let open_text = style.apply_to(open_text);
 
         println!("{open_text}");

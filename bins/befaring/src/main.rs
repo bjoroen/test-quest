@@ -16,7 +16,7 @@ use crate::outputter::OutPutter;
 use crate::parser::Befaring;
 use crate::runner::RunnerError;
 use crate::runner::RunnerResult;
-use crate::runner::run_http_tests;
+use crate::runner::run_tests;
 use crate::setup::StartUpError;
 use crate::setup::app::AppProcess;
 use crate::setup::app::OutputLine;
@@ -75,12 +75,12 @@ async fn load_and_validate_config() -> Result<(Cli, IR, usize, EnvSetup), Befari
 
     let mut validator = Validator::new(&befaring, contents.as_str(), cli.path.as_str());
 
-    let (tests, setup) = validator
+    let (test_groups, setup) = validator
         .validate()
         .map_err(BefaringError::ValidationError)?;
-    let n_tests = tests.tests.len();
+    let n_tests = test_groups.tests.len();
 
-    Ok((cli, tests, n_tests, setup))
+    Ok((cli, test_groups, n_tests, setup))
 }
 
 /// Spawns the concurrent test pipeline tasks: runner, asserter, and outputter.
@@ -99,7 +99,7 @@ async fn load_and_validate_config() -> Result<(Cli, IR, usize, EnvSetup), Befari
 /// # Concurrency
 /// All three tasks run concurrently and communicate via flume channels.
 async fn run_pipeline_tasks(
-    tests: IR,
+    test_groups: IR,
     n_tests: usize,
     pool: &sqlx::Pool<sqlx::Any>,
     path: &str,
@@ -114,17 +114,20 @@ async fn run_pipeline_tasks(
     // Outputter Task
     let outputter_rx_printter = outputter_rx.clone();
     let outputter_path = path.to_owned();
+
     let outputter_handle = tokio::spawn(async move {
         OutPutter::start(outputter_rx_printter, &outputter_path, n_tests).await;
     });
 
     // TestRunner Task
     let pool = pool.clone();
+
     let runner_jh =
-        tokio::spawn(async move { run_http_tests(tests.tests, runner_tx, pool.clone()).await });
+        tokio::spawn(async move { run_tests(test_groups, runner_tx, pool.clone()).await });
 
     // Asserter Task
     let asserter_outputter_tx = asserter_tx;
+
     let asserter_jh =
         tokio::spawn(async move { Asserter::run(asserter_rx, asserter_outputter_tx).await });
 
@@ -168,7 +171,7 @@ async fn main() -> Result<()> {
     // Load the CLI arguments and read the test configuration file.
     // The configuration is parsed, validated, and returned together with
     // the total number of tests and environment setup details.
-    let (cli, tests, n_tests, setup) = load_and_validate_config().await?;
+    let (cli, test_groups, n_tests, setup) = load_and_validate_config().await?;
 
     // Start the database container (e.g. Postgres, MySQL, etc.) and launch
     // the application under test. Returns a handle containing the process,
@@ -182,7 +185,7 @@ async fn main() -> Result<()> {
     // - The asserter, which verifies the results.
     // - The outputter, which collects and displays final output.
     let (runner_jh, asserter_jh, outputter_handle) =
-        run_pipeline_tasks(tests, n_tests, &app_handle.pool.clone(), &cli.path).await;
+        run_pipeline_tasks(test_groups, n_tests, &app_handle.pool.clone(), &cli.path).await;
 
     // Wait for all background tasks to complete and gracefully shut down
     // the database container and application process.
