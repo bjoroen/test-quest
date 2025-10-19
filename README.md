@@ -38,22 +38,12 @@ expect_jsonpath = { "$.users[0].name" = "Alice" }
 
  - [X] __Basic runner__
 
-    - [X] Parse TOML test files
-    - [X] Run HTTP requests against a configured server
-    - [X] Assert status codes and header values
-    - [X] Print test results in a nice way
-
  - [X] __CLI__
 
     - [X] Nice looking error messages with [Miette Error](https://github.com/zkat/miette)
     - [ ] Options for filtering tests, updating snapshots, verbose output
 
- - [ ] __Database support__
-
-    - In-memory DB (SQLite, DuckDB)
-    - External DB (user-provided URL)
-    - Containerized DB (via testcontainers)
-    - Reset state between tests
+ - [X] __Database support__
 
  - [ ] __Server lifecycle__
 
