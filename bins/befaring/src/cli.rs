@@ -7,4 +7,8 @@ pub struct Cli {
     /// Name of the person to greet
     #[arg(short, long, default_value = "./proof.toml")]
     pub path: String,
+
+    /// App stdout and stderr at the end
+    #[arg(short = 'o', long)]
+    pub app_output: bool,
 }

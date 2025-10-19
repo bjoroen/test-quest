@@ -1,49 +1,12 @@
-#![allow(clippy::result_large_err)]
-
 use std::sync::Arc;
 
-use clap::Parser;
-use console::Emoji;
 use console::Style;
-use console::Term;
 use flume::Receiver;
-use miette::Diagnostic;
-use miette::Result;
-use thiserror::Error;
 
 use crate::asserter::AssertResult;
-use crate::asserter::Asserter;
 use crate::asserter::TestResult;
-use crate::cli::Cli;
-use crate::parser::Proff;
-use crate::runner::RunnerResult;
-use crate::runner::run_http_tests;
-use crate::validator::ValidationError;
-use crate::validator::Validator;
 
-mod asserter;
-mod cli;
-mod parser;
-mod runner;
-mod validator;
-
-#[derive(Error, Debug, Diagnostic)]
-pub enum ProffError {
-    #[error("Failed to read toml file")]
-    FileError(#[from] std::io::Error),
-
-    #[error("Failed to parse toml file")]
-    TomlParsing(#[from] toml::de::Error),
-
-    #[error(transparent)]
-    #[diagnostic(transparent)]
-    ValidationError(#[from] ValidationError),
-
-    #[error("Failed in assert step")]
-    AssertError,
-}
-
-struct OutPutter;
+pub struct OutPutter;
 
 impl OutPutter {
     pub async fn start(
@@ -99,38 +62,4 @@ impl OutPutter {
             println!("{}", console::style("All tests passed! 🎉").bold().green());
         }
     }
-}
-
-#[tokio::main]
-async fn main() -> Result<()> {
-    let cli = Cli::parse();
-
-    let (tx, rx) = flume::unbounded::<RunnerResult>();
-    let (outputter_tx, outputter_rx) = flume::unbounded::<(String, Arc<[AssertResult]>)>();
-
-    let contents = std::fs::read_to_string(&cli.path).map_err(ProffError::FileError)?;
-    let proff: Proff = toml::from_str(&contents).map_err(ProffError::TomlParsing)?;
-
-    let mut validator = Validator::new();
-
-    let tests = validator
-        .validate(&proff, &contents, &cli.path)
-        .map_err(ProffError::ValidationError)?;
-
-    let n_tests = tests.tests.len();
-
-    let outputter_rx_printter = outputter_rx.clone();
-    let outputter_handle = tokio::spawn(async move {
-        OutPutter::start(outputter_rx_printter, &cli.path, n_tests).await;
-    });
-
-    let runner_jh = tokio::spawn(async move { run_http_tests(tests.tests, tx).await });
-
-    let asserter_outputter_tx = outputter_tx.clone();
-    let asserter_jh = tokio::spawn(async move { Asserter::run(rx, asserter_outputter_tx).await });
-
-    drop(outputter_tx);
-    let _ = futures::join!(runner_jh, asserter_jh, outputter_handle);
-
-    Ok(())
 }
