@@ -4,7 +4,10 @@ use serde::Deserialize;
 pub struct Befaring {
     pub setup: Setup,
     pub db: Db,
-    pub tests: Vec<Test>,
+    #[serde(default)]
+    pub before_each: Option<Hook>,
+    #[serde(default)]
+    pub test_groups: Vec<TestGroup>,
 }
 
 #[derive(Clone, Deserialize, Debug)]
@@ -21,6 +24,26 @@ pub struct Setup {
     pub args: Option<Vec<String>>,
     pub ready_when: String,
     pub database_url_env: Option<String>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct Hook {
+    #[serde(default)]
+    pub reset: Option<bool>,
+    #[serde(default)]
+    pub run_sql: Option<Vec<String>>,
+}
+
+// Group-level definition
+#[derive(Deserialize, Debug, Clone)]
+pub struct TestGroup {
+    pub name: String,
+    #[serde(default)]
+    pub before_each: Option<Hook>, // Optional group-specific hook
+    #[serde(default)]
+    pub tests: Vec<Test>, // Tests in this group
+    #[serde(default)]
+    pub subgroups: Vec<TestGroup>, // Optional nested groups
 }
 
 #[derive(Deserialize, Debug, Clone)]

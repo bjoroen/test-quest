@@ -10,7 +10,7 @@ use thiserror::Error;
 use tokio::task;
 
 use crate::validator::Assertion;
-use crate::validator::Test;
+use crate::validator::IR;
 
 #[derive(Error, Debug)]
 pub enum RunnerError {
@@ -26,37 +26,38 @@ pub struct RunnerResult {
 }
 
 pub async fn run_http_tests(
-    tests: Vec<Test>,
+    ir: IR,
     tx: Sender<RunnerResult>,
     _pool: Pool<sqlx::Any>,
 ) -> Result<(), RunnerError> {
     let client = Client::new();
 
-    tests.into_iter().for_each(|test| {
-        let client = client.clone();
-        let tx = tx.clone();
+    for test_group in &ir.tests {
+        test_group.tests.clone().into_iter().for_each(|test| {
+            let client = client.clone();
+            let tx = tx.clone();
 
-        task::spawn(async move {
-            let result = if let Some(body) = test.body {
-                client.request(test.method, test.url).body(body.to_string())
-            } else {
-                client.request(test.method, test.url)
-            }
-            .send()
-            .await;
+            task::spawn(async move {
+                let result = if let Some(body) = test.body {
+                    client.request(test.method, test.url).body(body.to_string())
+                } else {
+                    client.request(test.method, test.url)
+                }
+                .send()
+                .await;
 
-            if let Err(error) = tx
-                .send_async(RunnerResult {
-                    name: test.name,
-                    request: result,
-                    assertions: test.assertions,
-                })
-                .await
-            {
-                todo!("{error}")
-            }
+                if let Err(error) = tx
+                    .send_async(RunnerResult {
+                        name: test.name,
+                        request: result,
+                        assertions: test.assertions,
+                    })
+                    .await
+                {
+                    todo!("{error}")
+                }
+            });
         });
-    });
-
+    }
     Ok(())
 }

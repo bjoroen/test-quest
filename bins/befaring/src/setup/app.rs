@@ -111,7 +111,6 @@ pub async fn wait_for_app_ready(base_url: &str, ready_when_url: &str) -> Result<
         if let Ok(resp) = client.get(&url).send().await
             && resp.status().is_success()
         {
-            println!("App is ready!");
             return Ok(());
         }
 

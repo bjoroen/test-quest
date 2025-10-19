@@ -9,28 +9,56 @@ database_url_env = "DATABASE_URL"
 db_type = "postgres"
 migration_dir = "./utils/test_app/migrations"
 
-[[tests]]
-name = "GetUser"
-method = "GET"
-url = "/users/1"
-body = { name = "Alice" }
-assert_status = 200
-assert_headers = { "Content-Type" = "application/json" }
+[before_each]
+reset = true
+run_sql = [
+  "INSERT INTO USER (id, name) VALUES (1, 'Harry Potter');",
+  "INSERT INTO USER (id, name) VALUES (2, 'Hermione Granger');"
+]
 
-[[tests]]
-name = "HealthCheck"
-method = "GET"
-url = "/health"
-assert_status = 200
+# Group 1: auth tests
+[[test_groups]]
+name = "auth"
 
-[[tests]]
-name = "ListUsers"
-method = "GET"
-url = "/users"
-assert_status = 200
+[test_groups.before_each]
+reset = false
+run_sql = [
+  "DELETE FROM SESSION;"
+]
 
-[[tests]]
-name = "CreateUser"
-method = "POST"
-url = "/users"
-assert_status = 201
+  [[test_groups.tests]]
+  name = "LoginUser"
+  method = "POST"
+  url = "/login"
+  body = { username = "alice", password = "1234" }
+  assert_status = 200
+  assert_header = {Content-Type = "application/json"}
+
+  [[test_groups.tests]]
+  name = "LogoutUser"
+  method = "POST"
+  url = "/logout"
+  assert_status = 200
+
+# Group 2: user tests
+[[test_groups]]
+name = "users"
+
+[test_groups.before_each]
+reset = true
+run_sql = [
+  "DELETE FROM USER;"
+]
+
+  [[test_groups.tests]]
+  name = "GetUser"
+  method = "GET"
+  url = "/users/1"
+  assert_status = 200
+
+  [[test_groups.tests]]
+  name = "CreateUser"
+  method = "POST"
+  url = "/users"
+  body = { name = "Bob" }
+  assert_status = 201
