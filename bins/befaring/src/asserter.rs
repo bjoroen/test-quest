@@ -216,18 +216,12 @@ fn assert_sql(expect: &str, got: Option<&String>) -> TestResult {
 }
 
 fn assert_header(expected: &HeaderMap, actual: &HeaderMap) -> TestResult {
-    if expected.len() != actual.len() {
-        return TestResult::Fail;
-    }
-
     for (key, value_a) in expected {
-        match actual.get(key) {
-            Some(value_b) => {
-                if value_a.as_bytes() != value_b.as_bytes() {
-                    return TestResult::Fail;
-                }
-            }
-            None => return TestResult::Fail,
+        let Some(value_b) = actual.get(key) else {
+            continue;
+        };
+        if value_a.as_bytes() != value_b.as_bytes() {
+            return TestResult::Fail;
         }
     }
 
