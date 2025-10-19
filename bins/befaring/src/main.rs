@@ -16,7 +16,7 @@ use crate::outputter::OutPutter;
 use crate::parser::Befaring;
 use crate::runner::RunnerError;
 use crate::runner::RunnerResult;
-use crate::runner::run_http_tests;
+use crate::runner::run_tests;
 use crate::setup::StartUpError;
 use crate::setup::app::AppProcess;
 use crate::setup::app::OutputLine;
@@ -114,17 +114,20 @@ async fn run_pipeline_tasks(
     // Outputter Task
     let outputter_rx_printter = outputter_rx.clone();
     let outputter_path = path.to_owned();
+
     let outputter_handle = tokio::spawn(async move {
         OutPutter::start(outputter_rx_printter, &outputter_path, n_tests).await;
     });
 
     // TestRunner Task
     let pool = pool.clone();
+
     let runner_jh =
-        tokio::spawn(async move { run_http_tests(test_groups, runner_tx, pool.clone()).await });
+        tokio::spawn(async move { run_tests(test_groups, runner_tx, pool.clone()).await });
 
     // Asserter Task
     let asserter_outputter_tx = asserter_tx;
+
     let asserter_jh =
         tokio::spawn(async move { Asserter::run(asserter_rx, asserter_outputter_tx).await });
 

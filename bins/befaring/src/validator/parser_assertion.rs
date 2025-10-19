@@ -5,6 +5,7 @@ use reqwest::header::HeaderName;
 use reqwest::header::HeaderValue;
 use toml::Value;
 
+use crate::parser::AssertSql;
 use crate::validator::Assertion;
 use crate::validator::ValidationError;
 
@@ -76,7 +77,7 @@ fn parse_single_header(
 }
 
 /// Parses the optional header assertions from a TOML Value table.
-fn parse_header_assertions(
+pub fn parse_header_map(
     value: &Value,
     src: Option<&(String, String)>,
 ) -> Result<HeaderMap, ValidationError> {
@@ -103,6 +104,7 @@ fn parse_header_assertions(
 pub fn parse_assertions(
     assert_status: &Option<i32>,
     assert_headers: &Option<Value>,
+    assert_sql: &Option<AssertSql>,
     src: Option<(&str, &str)>,
 ) -> Result<Vec<Assertion>, ValidationError> {
     let mut assert_vec = vec![];
@@ -113,8 +115,16 @@ pub fn parse_assertions(
     }
 
     if let Some(value) = assert_headers {
-        let header_map = parse_header_assertions(value, src_ref.as_ref())?;
+        let header_map = parse_header_map(value, src_ref.as_ref())?;
         assert_vec.push(Assertion::Headers(header_map));
+    }
+    // SQL assertion
+    if let Some(sql) = assert_sql {
+        assert_vec.push(Assertion::Sql {
+            query: sql.query.clone(),
+            expect: sql.expect.clone(),
+            got: None,
+        });
     }
 
     Ok(assert_vec)

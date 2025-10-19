@@ -4,9 +4,7 @@ use serde::Deserialize;
 pub struct Befaring {
     pub setup: Setup,
     pub db: Db,
-    #[serde(default)]
-    pub before_each: Option<Hook>,
-    #[serde(default)]
+    pub before_each_group: Option<Hook>,
     pub test_groups: Vec<TestGroup>,
 }
 
@@ -28,30 +26,32 @@ pub struct Setup {
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct Hook {
-    #[serde(default)]
     pub reset: Option<bool>,
-    #[serde(default)]
     pub run_sql: Option<Vec<String>>,
 }
 
-// Group-level definition
 #[derive(Deserialize, Debug, Clone)]
 pub struct TestGroup {
     pub name: String,
-    #[serde(default)]
-    pub before_each: Option<Hook>, // Optional group-specific hook
-    #[serde(default)]
-    pub tests: Vec<Test>, // Tests in this group
-    #[serde(default)]
-    pub subgroups: Vec<TestGroup>, // Optional nested groups
+    pub before_each_test: Option<Hook>,
+    pub before_group: Option<Hook>,
+    pub tests: Vec<Test>,
 }
 
+#[derive(Debug, Deserialize, Clone)]
+pub struct AssertSql {
+    pub query: String,
+    pub expect: String,
+}
 #[derive(Deserialize, Debug, Clone)]
 pub struct Test {
+    pub before_run: Option<Vec<String>>,
     pub name: String,
     pub method: String,
+    pub headers: Option<toml::Value>,
     pub url: String,
     pub body: Option<serde_json::Value>,
     pub assert_status: Option<i32>,
     pub assert_headers: Option<toml::Value>,
+    pub assert_sql: Option<AssertSql>,
 }

@@ -9,56 +9,73 @@ database_url_env = "DATABASE_URL"
 db_type = "postgres"
 migration_dir = "./utils/test_app/migrations"
 
-[before_each]
-reset = true
-run_sql = [
-  "INSERT INTO USER (id, name) VALUES (1, 'Harry Potter');",
-  "INSERT INTO USER (id, name) VALUES (2, 'Hermione Granger');"
-]
-
-# Group 1: auth tests
+# --------------------
+# Group 1: Auth tests
+# --------------------
 [[test_groups]]
 name = "auth"
 
-[test_groups.before_each]
-reset = false
-run_sql = [
-  "DELETE FROM SESSION;"
-]
+[test_groups.before_group]
+reset = true 
+run_sql = ["""INSERT INTO users (id, name, password) VALUES
+    (1, 'Alice', '123'),
+    (2, 'Harry Potter', '1234'),
+    (3, 'Charlie', '4321')
+ON CONFLICT (id) DO NOTHING;"""]
 
-  [[test_groups.tests]]
-  name = "LoginUser"
-  method = "POST"
-  url = "/login"
-  body = { username = "alice", password = "1234" }
-  assert_status = 200
-  assert_header = {Content-Type = "application/json"}
+[[test_groups.tests]]
+name = "LoginUser"
+method = "POST"
+url = "/login"
+body = { username = "Harry Potter", password = "1234" }
+assert_status = 200
+assert_headers = { Content-Type = "application/json" }
 
-  [[test_groups.tests]]
-  name = "LogoutUser"
-  method = "POST"
-  url = "/logout"
-  assert_status = 200
+[[test_groups.tests]]
+name = "ChangeUserPassword"
+method = "PATCH"
+url = "/login/password/change"
+body = { username = "Harry Potter", password = "123123" }
+assert_status = 200
+assert_headers = { Content-Type = "application/json" }
+assert_sql = { query = "SELECT password FROM users WHERE name = 'Harry Potter';", expect = "23123" }
 
-# Group 2: user tests
+[[test_groups.tests]]
+name = "LogoutUser"
+method = "POST"
+url = "/logout"
+assert_status = 200
+
+# --------------------
+# Group 2: User tests
+# --------------------
 [[test_groups]]
 name = "users"
 
-[test_groups.before_each]
+[test_groups.before_group]
 reset = true
-run_sql = [
-  "DELETE FROM USER;"
-]
+run_sql = ["""INSERT INTO users (id, name, password) VALUES
+    (1, 'Alice', '123'),
+    (2, 'Harry Potter', '1234'),
+    (3, 'Charlie', '4321')
+ON CONFLICT (id) DO NOTHING;"""]
 
-  [[test_groups.tests]]
-  name = "GetUser"
-  method = "GET"
-  url = "/users/1"
-  assert_status = 200
+[[test_groups.tests]]
+name = "DeleteUser"
+method = "DELETE"
+url = "/users/1"
+assert_status = 200
 
-  [[test_groups.tests]]
-  name = "CreateUser"
-  method = "POST"
-  url = "/users"
-  body = { name = "Bob" }
-  assert_status = 201
+[[test_groups.tests]]
+before_run = ["INSERT INTO users (id, name, password) VALUES (1, 'Alice', '123') ON CONFLICT (id) DO NOTHING;"]
+name = "GetUser"
+method = "GET"
+url = "/users/1"
+assert_status = 200
+
+[[test_groups.tests]]
+name = "CreateUser"
+method = "POST"
+url = "/users"
+body = { name = "Bob" }
+assert_status = 201

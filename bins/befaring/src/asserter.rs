@@ -29,7 +29,7 @@ pub struct AssertResult {
 pub enum Actual {
     Header(HeaderMap),
     Status(reqwest::StatusCode),
-    // Json,
+    Sql(String),
 }
 
 impl Display for AssertResult {
@@ -72,6 +72,30 @@ impl Display for AssertResult {
                 writeln!(f, "  {}", console::style("Actual headers:").red())?;
                 print_headers(f, actual_headers)
             }
+            // ❌ SQL assertion mismatch
+            (TestResult::Fail, Assertion::Sql { query, expect, .. }, Actual::Sql(got)) => {
+                writeln!(
+                    f,
+                    "{} {}",
+                    console::style("✘").red().bold(),
+                    console::style("FAIL!").red().bold(),
+                )?;
+                writeln!(f, "  {}", console::style("SQL query:").yellow().bold())?;
+                writeln!(f, "    {}", console::style(query).dim())?;
+                writeln!(
+                    f,
+                    "  {} {}",
+                    console::style("Expected:").green(),
+                    console::style(expect).green().bold()
+                )?;
+                writeln!(
+                    f,
+                    "  {} {}",
+                    console::style("Got:").red(),
+                    console::style(got).red().bold()
+                )
+            }
+
             _ => todo!(),
         }
     }
@@ -97,6 +121,7 @@ impl Display for Assertion {
             Assertion::Headers(_) => {
                 write!(f, "Header test")
             }
+            Assertion::Sql { .. } => write!(f, "SQL test"),
         }
     }
 }
@@ -113,7 +138,7 @@ impl Display for Actual {
                 write!(f, "Got headers {{{}}}", headers.join(", "))
             }
             Actual::Status(status_code) => write!(f, "Got status {}", status_code),
-            // Actual::Json => todo!(),
+            Actual::Sql(s) => write!(f, "Got response from database: {s}"),
         }
     }
 }
@@ -137,6 +162,7 @@ impl Assert for RunnerResult {
                         Assertion::Headers(expected_headermap) => {
                             assert_header(expected_headermap, request.headers())
                         }
+                        Assertion::Sql { expect, got, .. } => assert_sql(expect, got.as_ref()),
                     };
 
                     AssertResult {
@@ -145,6 +171,13 @@ impl Assert for RunnerResult {
                         actual: match a {
                             Assertion::Status(_) => Actual::Status(request.status()),
                             Assertion::Headers(_) => Actual::Header(request.headers().clone()),
+                            Assertion::Sql { got, .. } => {
+                                if let Some(g) = got {
+                                    Actual::Sql(g.clone())
+                                } else {
+                                    Actual::Sql("".into())
+                                }
+                            }
                         },
                     }
                 })
@@ -168,6 +201,18 @@ impl Asserter {
 
         Ok(())
     }
+}
+
+fn assert_sql(expect: &str, got: Option<&String>) -> TestResult {
+    let Some(got) = got else {
+        return TestResult::Fail;
+    };
+
+    if got != expect {
+        return TestResult::Fail;
+    }
+
+    TestResult::Pass
 }
 
 fn assert_header(expected: &HeaderMap, actual: &HeaderMap) -> TestResult {

@@ -30,6 +30,11 @@ pub struct Validator {
 pub enum Assertion {
     Status(i32),
     Headers(HeaderMap),
+    Sql {
+        query: String,
+        expect: String,
+        got: Option<String>,
+    },
 }
 
 pub struct EnvSetup {
@@ -44,13 +49,14 @@ pub struct EnvSetup {
 }
 
 pub struct IR {
-    pub before_each: Option<BeforeEach>,
+    pub before_each_group: Option<BeforeEach>,
     pub tests: Vec<TestGroups>,
 }
 
 pub struct TestGroups {
     pub name: String,
-    pub before_each: Option<BeforeEach>,
+    pub before_group: Option<BeforeEach>,
+    pub before_each_test: Option<BeforeEach>,
     pub tests: Vec<ValidatedTests>,
 }
 
@@ -61,9 +67,11 @@ pub struct BeforeEach {
 
 #[derive(Clone)]
 pub struct ValidatedTests {
+    pub before_run: Option<Vec<String>>,
     pub name: String,
     pub method: Method,
     pub url: Url,
+    pub headers: HeaderMap,
     pub body: Option<serde_json::Value>,
     pub assertions: Vec<Assertion>,
 }
@@ -110,14 +118,16 @@ impl Validator {
     }
 
     fn validate_tests(&self) -> Result<IR, ValidationError> {
-        let before_each = self.create_before_each(&self.befaring.before_each)?;
+        let before_each_group = self.create_before_each(&self.befaring.before_each_group)?;
 
         let test_groups = self
             .befaring
             .test_groups
             .iter()
             .map(|group| {
-                let before_each = self.create_before_each(&group.before_each)?;
+                let before_each_test = self.create_before_each(&group.before_each_test)?;
+                let before_group = self.create_before_each(&group.before_group)?;
+                let name = group.name.clone();
 
                 let file_name = self.file_name.clone();
                 let toml_src = self.toml_src.clone();
@@ -127,7 +137,7 @@ impl Validator {
                     .iter()
                     .map(|test| {
                         self.create_test(
-                            &test,
+                            test,
                             file_name.as_ref(),
                             toml_src.as_ref(),
                             &self.befaring.setup.base_url,
@@ -136,15 +146,16 @@ impl Validator {
                     .collect::<Result<Vec<_>, ValidationError>>()?;
 
                 Ok(TestGroups {
-                    name: "name".into(),
-                    before_each,
+                    name,
+                    before_each_test,
+                    before_group,
                     tests,
                 })
             })
             .collect::<Result<Vec<_>, ValidationError>>()?;
 
         Ok(IR {
-            before_each,
+            before_each_group,
             tests: test_groups,
         })
     }
@@ -192,7 +203,7 @@ impl Validator {
             validation_err!(format!("{} - method", test.name), e, self, &test.method)
         })?;
 
-        let url = parse_url(&base_url, &test.url).map_err(|e| match e {
+        let url = parse_url(base_url, &test.url).map_err(|e| match e {
             ParseUrlError::SetupUrlEndsWithSlash => {
                 validation_err!("setup.base_url", BASE_URL_ENDS_WITH, self, &base_url)
             }
@@ -213,17 +224,30 @@ impl Validator {
 
         let body = test.body.clone();
         let name = test.name.clone();
+        let before_run = test.before_run.clone();
+
+        let headers = if let Some(header_value) = &test.headers {
+            dbg!(parser_assertion::parse_header_map(
+                header_value,
+                Some(&(file_name.to_string(), toml_src.to_string())),
+            ))?
+        } else {
+            HeaderMap::new()
+        };
 
         let assertions = parser_assertion::parse_assertions(
             &test.assert_status,
             &test.assert_headers,
+            &test.assert_sql,
             Some((file_name, toml_src)),
         )?;
 
         Ok(ValidatedTests {
+            before_run,
             name,
             body,
             method,
+            headers,
             url,
             assertions,
         })

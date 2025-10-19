@@ -1,10 +1,6 @@
-use std::time::Duration;
-
 use database::Database;
-use reqwest::Client;
 use sqlx::Pool;
 use thiserror::Error;
-use tokio::time::sleep;
 
 use crate::setup::app::AppError;
 use crate::setup::app::AppProcess;
