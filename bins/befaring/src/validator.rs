@@ -12,6 +12,7 @@ mod parser_assertion;
 
 use crate::parser;
 use crate::parser::Befaring;
+use crate::parser::Global;
 use crate::parser::Hook;
 
 // Error messages for parsing URLs
@@ -143,6 +144,7 @@ impl Validator {
                             file_name.as_ref(),
                             toml_src.as_ref(),
                             &self.befaring.setup.base_url,
+                            &self.befaring.global,
                         )
                     })
                     .collect::<Result<Vec<_>, ValidationError>>()?;
@@ -200,6 +202,7 @@ impl Validator {
         file_name: &str,
         toml_src: &str,
         base_url: &str,
+        global: &Global,
     ) -> Result<ValidatedTests, ValidationError> {
         let method = parse_method(&test.method.to_uppercase()).map_err(|e| {
             validation_err!(format!("{} - method", test.name), e, self, &test.method)
@@ -228,14 +231,31 @@ impl Validator {
         let name = test.name.clone();
         let before_run = test.before_run.clone();
 
-        let headers = if let Some(header_value) = &test.headers {
+        // Start with the global headers if defined, and add them to the request's
+        // HeaderMap. Then, merge the headers from the individual test. If a
+        // header exists in both the global and test headers, the test header
+        // takes precedence.
+        let mut headers = if let Some(global_value) = &global.headers {
             parser_assertion::parse_header_map(
-                header_value,
+                global_value,
                 Some(&(file_name.to_string(), toml_src.to_string())),
             )?
         } else {
             HeaderMap::new()
         };
+
+        if let Some(header_value) = &test.headers {
+            let test_headers = parser_assertion::parse_header_map(
+                header_value,
+                Some(&(file_name.to_string(), toml_src.to_string())),
+            )?;
+
+            for (key, value) in test_headers {
+                if let Some(key) = key {
+                    headers.insert(key, value);
+                }
+            }
+        }
 
         let assertions = parser_assertion::parse_assertions(
             &test.assert_status,

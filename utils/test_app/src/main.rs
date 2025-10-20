@@ -29,30 +29,29 @@ struct User {
 }
 
 async fn middleware_fn(
-    // run the `HeaderMap` extractor
     headers: HeaderMap,
-    // you can also add more extractors here but the last
-    // extractor must implement `FromRequest` which
-    // `Request` does
     request: Request,
     next: Next,
-) -> Response {
+) -> Result<Response, StatusCode> {
     println!("{:#?}", headers);
     println!("{:#?}", request);
 
-    next.run(request).await
+    if let Some(auth_header) = headers.get("authorization")
+        && auth_header != "api-key 1234-1234-1234-1234"
+    {
+        return Err(StatusCode::UNAUTHORIZED);
+    }
+
+    Ok(next.run(request).await)
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // read DATABASE_URL from env
     let database_url =
         env::var("DATABASE_URL").expect("DATABASE_URL must be set in environment variables");
 
-    // initialize Postgres pool
     let pool = PgPool::connect(&database_url).await?;
 
-    // build router and inject pool as shared state
     let app = Router::new()
         .route("/health", get(health))
         .route("/login", post(login))
@@ -62,14 +61,12 @@ async fn main() -> anyhow::Result<()> {
         .route("/users", post(create_user))
         .route("/users", get(list_users))
         .route("/users/{id}", get(get_user))
-        // .layer(axum::middleware::from_fn(middleware_fn))
+        .layer(axum::middleware::from_fn(middleware_fn))
         .with_state(pool);
 
-    // run app
     let addr = SocketAddr::from(([127, 0, 0, 1], 6969));
     println!("🚀 API running at http://{addr}");
 
-    // run our app with hyper, listening globally on port 3000
     let listener = tokio::net::TcpListener::bind("0.0.0.0:6969").await.unwrap();
     axum::serve(listener, app).await.unwrap();
 

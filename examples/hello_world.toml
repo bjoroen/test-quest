@@ -9,6 +9,9 @@ database_url_env = "DATABASE_URL"
 db_type = "postgres"
 migration_dir = "./utils/test_app/migrations"
 
+[global]
+headers = { Authorization = "api-key 1234-1234-1234-1234" }
+
 # --------------------
 # Group 1: Auth tests
 # --------------------
@@ -27,6 +30,7 @@ ON CONFLICT (id) DO NOTHING;"""]
 name = "LoginUser"
 method = "POST"
 url = "/login"
+headers = { Authorization = "api-key 234-1234-1234-1234" }
 body = { username = "Harry Potter", password = "1234" }
 assert_status = 200
 assert_headers = { Content-Type = "application/json" }
