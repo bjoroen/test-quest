@@ -8,30 +8,64 @@ The runner executes your tests by sending HTTP requests, checking responses, and
 ## Example
 
 ```toml
-[setup.server]
-mode = "external"
-url = "http://localhost:3000"
+[setup]
+base_url = "http://localhost:6969"
+command = "cargo"
+args = ["r", "-p", "test_app"]
+ready_when = "/health"
+database_url_env = "DATABASE_URL"
 
-[[tests]]
-name = "health check"
-method = "GET"
-url = "/health"
-expect_status = 200
+[db]
+db_type = "postgres"
+migration_dir = "./utils/test_app/migrations"
 
-[[tests]]
-name = "create user"
+# --------------------
+# Group 1: Auth tests
+# --------------------
+[[test_groups]]
+name = "auth"
+
+[test_groups.before_group]
+reset = true
+run_sql = ["""INSERT INTO users (id, name, password) VALUES
+    (1, 'Alice', '123'),
+    (2, 'Harry Potter', '1234'),
+    (3, 'Charlie', '4321')
+ON CONFLICT (id) DO NOTHING;"""]
+
+[[test_groups.tests]]
+name = "LoginUser"
 method = "POST"
-url = "/users"
-body = { name = "Alice" }
-expect_status = 200
-expect_jsonpath = { "$.name" = "Alice" }
+url = "/login"
+body = { username = "Harry Potter", password = "1234" }
+assert_status = 200
+assert_headers = { Content-Type = "application/json" }
 
-[[tests]]
-name = "list users"
+[[test_groups.tests]]
+name = "ChangeUserPassword"
+method = "PATCH"
+url = "/login/password/change"
+body = { username = "Harry Potter", password = "123123" }
+assert_status = 200
+assert_headers = { Content-Length = "0" }
+assert_sql = { query = "SELECT password FROM users WHERE name = 'Harry Potter';", expect = "123123" }
+
+[[test_groups.tests]]
+name = "DeleteUser"
+method = "DELETE"
+url = "/users/1"
+assert_status = 200
+assert_json = { id = 1, name = "Alice", password = "23" }
+
+[[test_groups.tests]]
+before_run = [
+  "INSERT INTO users (id, name, password) VALUES (1, 'Alice', '123') ON CONFLICT (id) DO NOTHING;",
+]
+name = "GetUser"
 method = "GET"
-url = "/users"
-expect_status = 200
-expect_jsonpath = { "$.users[0].name" = "Alice" }
+url = "/users/1"
+assert_status = 200
+
 ```
 
 ## Roadmap / TODO
@@ -45,10 +79,7 @@ expect_jsonpath = { "$.users[0].name" = "Alice" }
 
  - [X] __Database support__
 
- - [ ] __Server lifecycle__
-
-    - External mode (assume running server)
-    - Binary mode (spawn local binary, wait for readiness)
+ - [X] __Server lifecycle__
 
  - [ ] __Snapshots__
 
