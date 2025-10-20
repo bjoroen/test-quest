@@ -35,6 +35,7 @@ pub enum Assertion {
         expect: String,
         got: Option<String>,
     },
+    Json(serde_json::Value),
 }
 
 pub struct EnvSetup {
@@ -227,10 +228,10 @@ impl Validator {
         let before_run = test.before_run.clone();
 
         let headers = if let Some(header_value) = &test.headers {
-            dbg!(parser_assertion::parse_header_map(
+            parser_assertion::parse_header_map(
                 header_value,
                 Some(&(file_name.to_string(), toml_src.to_string())),
-            ))?
+            )?
         } else {
             HeaderMap::new()
         };
@@ -239,6 +240,7 @@ impl Validator {
             &test.assert_status,
             &test.assert_headers,
             &test.assert_sql,
+            &test.assert_json,
             Some((file_name, toml_src)),
         )?;
 

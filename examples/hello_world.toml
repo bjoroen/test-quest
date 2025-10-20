@@ -38,7 +38,7 @@ url = "/login/password/change"
 body = { username = "Harry Potter", password = "123123" }
 assert_status = 200
 assert_headers = { Content-Length = "0" }
-assert_sql = { query = "SELECT password FROM users WHERE name = 'Harry Potter';", expect = "23123" }
+assert_sql = { query = "SELECT password FROM users WHERE name = 'Harry Potter';", expect = "123123" }
 
 [[test_groups.tests]]
 name = "LogoutUser"
@@ -65,6 +65,7 @@ name = "DeleteUser"
 method = "DELETE"
 url = "/users/1"
 assert_status = 200
+assert_json = { id = 1, name = "Alice", password = "23" }
 
 [[test_groups.tests]]
 before_run = [

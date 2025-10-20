@@ -30,6 +30,7 @@ pub enum Actual {
     Header(HeaderMap),
     Status(reqwest::StatusCode),
     Sql(String),
+    Json(serde_json::Value),
 }
 
 impl Display for AssertResult {
@@ -72,7 +73,6 @@ impl Display for AssertResult {
                 writeln!(f, "  {}", console::style("Actual headers:").red())?;
                 print_headers(f, actual_headers)
             }
-            // ❌ SQL assertion mismatch
             (TestResult::Fail, Assertion::Sql { query, expect, .. }, Actual::Sql(got)) => {
                 writeln!(
                     f,
@@ -96,7 +96,37 @@ impl Display for AssertResult {
                 )
             }
 
-            _ => todo!(),
+            (TestResult::Fail, Assertion::Json(expected_json), Actual::Json(actual_json)) => {
+                writeln!(
+                    f,
+                    "{} {}",
+                    console::style("✘").red().bold(),
+                    console::style("FAIL!").red().bold(),
+                )?;
+                writeln!(f, "  {}", console::style("Expected JSON:").green())?;
+                writeln!(
+                    f,
+                    "{}",
+                    console::style(serde_json::to_string_pretty(expected_json).unwrap_or_default())
+                        .green()
+                )?;
+                writeln!(f, "  {}", console::style("Actual JSON:").red())?;
+                writeln!(
+                    f,
+                    "{}",
+                    console::style(serde_json::to_string_pretty(actual_json).unwrap_or_default())
+                        .red()
+                )
+            }
+
+            _ => {
+                writeln!(
+                    f,
+                    "{} {} (unhandled combination)",
+                    console::style("⚠").yellow(),
+                    console::style("UNKNOWN RESULT").yellow().bold()
+                )
+            }
         }
     }
 }
@@ -122,6 +152,7 @@ impl Display for Assertion {
                 write!(f, "Header test")
             }
             Assertion::Sql { .. } => write!(f, "SQL test"),
+            Assertion::Json(..) => write!(f, "JSON test"),
         }
     }
 }
@@ -139,6 +170,7 @@ impl Display for Actual {
             }
             Actual::Status(status_code) => write!(f, "Got status {}", status_code),
             Actual::Sql(s) => write!(f, "Got response from database: {s}"),
+            Actual::Json(value) => write!(f, "Got json: {value}"),
         }
     }
 }
@@ -149,7 +181,21 @@ pub trait Assert {
 
 impl Assert for RunnerResult {
     fn assert(&self) -> Arc<[AssertResult]> {
-        let Ok(request) = &self.request else { todo!() };
+        if let Some(error) = &self.error {
+            return Arc::from([AssertResult {
+                status: todo!(),
+                expected: todo!(),
+                actual: todo!(),
+            }]);
+        }
+
+        let Some(response) = &self.response else {
+            return Arc::from([AssertResult {
+                status: todo!(),
+                expected: todo!(),
+                actual: todo!(),
+            }]);
+        };
 
         Arc::from(
             self.assertions
@@ -157,26 +203,32 @@ impl Assert for RunnerResult {
                 .map(|a| {
                     let result = match a {
                         Assertion::Status(expected_status) => {
-                            assert_status(expected_status, request.status())
+                            assert_status(expected_status, response.status)
                         }
                         Assertion::Headers(expected_headermap) => {
-                            assert_header(expected_headermap, request.headers())
+                            assert_header(expected_headermap, &response.headers)
                         }
                         Assertion::Sql { expect, got, .. } => assert_sql(expect, got.as_ref()),
+                        Assertion::Json(expected_json) => {
+                            assert_json(expected_json, response.body_json.as_ref())
+                        }
                     };
 
                     AssertResult {
                         status: result,
                         expected: a.clone(),
                         actual: match a {
-                            Assertion::Status(_) => Actual::Status(request.status()),
-                            Assertion::Headers(_) => Actual::Header(request.headers().clone()),
+                            Assertion::Status(_) => Actual::Status(response.status),
+                            Assertion::Headers(_) => Actual::Header(response.headers.clone()),
                             Assertion::Sql { got, .. } => {
                                 if let Some(g) = got {
                                     Actual::Sql(g.clone())
                                 } else {
                                     Actual::Sql("".into())
                                 }
+                            }
+                            Assertion::Json(_) => {
+                                Actual::Json(response.body_json.clone().unwrap_or_default())
                             }
                         },
                     }
@@ -200,6 +252,19 @@ impl Asserter {
         }
 
         Ok(())
+    }
+}
+
+fn assert_json(expected: &serde_json::Value, got: Option<&serde_json::Value>) -> TestResult {
+    match got {
+        Some(got) => {
+            if got == expected {
+                TestResult::Pass
+            } else {
+                TestResult::Fail
+            }
+        }
+        None => TestResult::Pass,
     }
 }
 

@@ -105,6 +105,7 @@ pub fn parse_assertions(
     assert_status: &Option<i32>,
     assert_headers: &Option<Value>,
     assert_sql: &Option<AssertSql>,
+    assert_json: &Option<serde_json::Value>,
     src: Option<(&str, &str)>,
 ) -> Result<Vec<Assertion>, ValidationError> {
     let mut assert_vec = vec![];
@@ -118,13 +119,17 @@ pub fn parse_assertions(
         let header_map = parse_header_map(value, src_ref.as_ref())?;
         assert_vec.push(Assertion::Headers(header_map));
     }
-    // SQL assertion
+
     if let Some(sql) = assert_sql {
         assert_vec.push(Assertion::Sql {
             query: sql.query.clone(),
             expect: sql.expect.clone(),
             got: None,
         });
+    }
+
+    if let Some(json) = assert_json {
+        assert_vec.push(Assertion::Json(json.clone()));
     }
 
     Ok(assert_vec)
