@@ -5,6 +5,8 @@ use flume::Sender;
 use reqwest::Client;
 use reqwest::Error;
 use reqwest::Response;
+use reqwest::StatusCode;
+use reqwest::header::HeaderMap;
 use sqlx::AnyPool;
 use sqlx::Pool;
 use sqlx::Row;
@@ -25,7 +27,8 @@ pub enum RunnerError {
 #[derive(Debug)]
 pub struct RunnerResult {
     pub name: String,
-    pub request: Result<Response, Error>,
+    pub response: Option<CapturedResponse>,
+    pub error: Option<String>,
     pub assertions: Vec<Assertion>,
 }
 
@@ -67,7 +70,6 @@ pub async fn run_tests(
                 client
                     .request(test.method, test.url)
                     .headers(test.headers)
-                    // Should not be hardcoded that its json
                     .json(&body)
             } else {
                 client.request(test.method, test.url).headers(test.headers)
@@ -77,14 +79,22 @@ pub async fn run_tests(
 
             run_sql_assertions(&mut test.assertions, &pool).await;
 
-            if let Err(error) = tx
-                .send_async(RunnerResult {
+            let runner_result = match result {
+                Ok(resp) => RunnerResult {
                     name: test.name,
-                    request: result,
+                    response: Some(CapturedResponse::from_response(resp).await),
+                    error: None,
                     assertions: test.assertions,
-                })
-                .await
-            {
+                },
+                Err(err) => RunnerResult {
+                    name: test.name,
+                    response: None,
+                    error: Some(err.to_string()),
+                    assertions: test.assertions,
+                },
+            };
+
+            if let Err(error) = tx.send_async(runner_result).await {
                 todo!("{error}")
             }
         }
@@ -189,4 +199,35 @@ pub async fn reset_database(pool: &AnyPool) -> Result<(), sqlx::Error> {
     }
 
     Ok(())
+}
+
+#[derive(Debug)]
+pub struct CapturedResponse {
+    pub status: StatusCode,
+    pub headers: HeaderMap,
+    pub body_text: String,
+    pub body_json: Option<serde_json::Value>,
+}
+
+impl CapturedResponse {
+    pub async fn from_response(resp: Response) -> Self {
+        let status = resp.status();
+        let headers = resp.headers().clone();
+
+        // Consume the body exactly once
+        let body_text = match resp.text().await {
+            Ok(t) => t,
+            Err(err) => format!("Failed to read body: {}", err),
+        };
+
+        // Attempt to parse JSON, but don't panic
+        let body_json = serde_json::from_str::<serde_json::Value>(&body_text).ok();
+
+        Self {
+            status,
+            headers,
+            body_text,
+            body_json,
+        }
+    }
 }

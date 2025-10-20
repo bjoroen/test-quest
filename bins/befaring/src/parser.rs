@@ -54,4 +54,5 @@ pub struct Test {
     pub assert_status: Option<i32>,
     pub assert_headers: Option<toml::Value>,
     pub assert_sql: Option<AssertSql>,
+    pub assert_json: Option<serde_json::Value>,
 }
