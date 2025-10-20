@@ -50,6 +50,7 @@ pub struct Test {
     pub method: String,
     pub headers: Option<toml::Value>,
     pub url: String,
+    // Should be json body
     pub body: Option<serde_json::Value>,
     pub assert_status: Option<i32>,
     pub assert_headers: Option<toml::Value>,

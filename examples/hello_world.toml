@@ -37,8 +37,17 @@ method = "PATCH"
 url = "/login/password/change"
 body = { username = "Harry Potter", password = "123123" }
 assert_status = 200
-assert_headers = { Content-Length = "0" }
+assert_headers = { Content-Length = "1" }
 assert_sql = { query = "SELECT password FROM users WHERE name = 'Harry Potter';", expect = "123123" }
+
+[[test_groups.tests]]
+name = "ChangeUserPasswordFail"
+method = "PATCH"
+url = "/login/password/change"
+body = { username = "Harry Potter", password = "123123" }
+assert_status = 200
+assert_headers = { Content-Length = "0" }
+assert_sql = { query = "SELECT password FROM users WHERE name = 'Harry Potter';", expect = "1223" }
 
 [[test_groups.tests]]
 name = "LogoutUser"

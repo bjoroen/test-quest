@@ -28,8 +28,9 @@ impl OutPutter {
                 match r.status {
                     TestResult::Pass => {
                         println!(
-                            "[ {test_type_aligned} ] {}  {name} {method} {path} {}",
+                            "[ {test_type_aligned} ] {}  {name} {} {path} {}",
                             console::style("✔").green().bold(),
+                            console::style(method.clone()).bold().yellow(),
                             console::style("PASS!").green().bold(),
                         )
                     }
