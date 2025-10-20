@@ -109,7 +109,8 @@ async fn run_pipeline_tasks(
     JoinHandle<()>,
 ) {
     let (runner_tx, asserter_rx) = flume::unbounded::<RunnerResult>();
-    let (asserter_tx, outputter_rx) = flume::unbounded::<(String, Arc<[AssertResult]>)>();
+    let (asserter_tx, outputter_rx) =
+        flume::unbounded::<(String, String, String, Arc<[AssertResult]>)>();
 
     // Outputter Task
     let outputter_rx_printter = outputter_rx.clone();

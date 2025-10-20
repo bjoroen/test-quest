@@ -31,6 +31,7 @@ pub enum Actual {
     Status(reqwest::StatusCode),
     Sql(String),
     Json(serde_json::Value),
+    RequestFailed(String),
 }
 
 impl Display for AssertResult {
@@ -65,7 +66,7 @@ impl Display for AssertResult {
                 writeln!(
                     f,
                     "{} {}",
-                    console::style("✘").red().bold(),
+                    console::style("✖").red().bold(),
                     console::style("FAIL!").red().bold(),
                 )?;
                 writeln!(f, "  {}", console::style("Expected headers:").green())?;
@@ -118,6 +119,20 @@ impl Display for AssertResult {
                         .red()
                 )
             }
+            (TestResult::Fail, _, Actual::RequestFailed(err)) => {
+                writeln!(
+                    f,
+                    "{} {}",
+                    console::style("✘").red().bold(),
+                    console::style("FAIL!").red().bold(),
+                )?;
+                writeln!(
+                    f,
+                    "  {} {}",
+                    console::style("Request failed with error:").red(),
+                    console::style(err).red().bold()
+                )
+            }
 
             _ => {
                 writeln!(
@@ -153,6 +168,7 @@ impl Display for Assertion {
             }
             Assertion::Sql { .. } => write!(f, "SQL test"),
             Assertion::Json(..) => write!(f, "JSON test"),
+            Assertion::RequestFailed => write!(f, "Request failed"),
         }
     }
 }
@@ -161,7 +177,6 @@ impl Display for Actual {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Actual::Header(header_map) => {
-                // Convert headers to a readable string
                 let headers: Vec<String> = header_map
                     .iter()
                     .map(|(k, v)| format!("{}: {}", k, v.to_str().unwrap_or("<invalid utf8>")))
@@ -171,6 +186,7 @@ impl Display for Actual {
             Actual::Status(status_code) => write!(f, "Got status {}", status_code),
             Actual::Sql(s) => write!(f, "Got response from database: {s}"),
             Actual::Json(value) => write!(f, "Got json: {value}"),
+            Actual::RequestFailed(_) => write!(f, "Request failed"),
         }
     }
 }
@@ -183,17 +199,17 @@ impl Assert for RunnerResult {
     fn assert(&self) -> Arc<[AssertResult]> {
         if let Some(error) = &self.error {
             return Arc::from([AssertResult {
-                status: todo!(),
-                expected: todo!(),
-                actual: todo!(),
+                status: TestResult::Fail,
+                expected: Assertion::RequestFailed,
+                actual: Actual::RequestFailed(error.to_string()),
             }]);
         }
 
         let Some(response) = &self.response else {
             return Arc::from([AssertResult {
-                status: todo!(),
-                expected: todo!(),
-                actual: todo!(),
+                status: TestResult::Fail,
+                expected: Assertion::RequestFailed,
+                actual: Actual::RequestFailed(self.error.clone().unwrap_or_default()),
             }]);
         };
 
@@ -212,6 +228,7 @@ impl Assert for RunnerResult {
                         Assertion::Json(expected_json) => {
                             assert_json(expected_json, response.body_json.as_ref())
                         }
+                        Assertion::RequestFailed => todo!(),
                     };
 
                     AssertResult {
@@ -230,6 +247,7 @@ impl Assert for RunnerResult {
                             Assertion::Json(_) => {
                                 Actual::Json(response.body_json.clone().unwrap_or_default())
                             }
+                            Assertion::RequestFailed => todo!(),
                         },
                     }
                 })
@@ -241,12 +259,17 @@ impl Assert for RunnerResult {
 impl Asserter {
     pub async fn run(
         rx: Receiver<RunnerResult>,
-        output_tx: Sender<(String, Arc<[AssertResult]>)>,
+        output_tx: Sender<(String, String, String, Arc<[AssertResult]>)>,
     ) -> Result<(), ()> {
         while let Ok(msg) = rx.recv_async().await {
             let assert_result = msg.assert();
 
-            if let Err(error) = output_tx.send_async((msg.name, assert_result)).await {
+            let path = msg.url.path();
+            let method = msg.method;
+            if let Err(error) = output_tx
+                .send_async((msg.name, path.into(), method, assert_result))
+                .await
+            {
                 todo!("{error}")
             };
         }

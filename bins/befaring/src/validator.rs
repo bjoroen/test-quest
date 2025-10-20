@@ -36,6 +36,7 @@ pub enum Assertion {
         got: Option<String>,
     },
     Json(serde_json::Value),
+    RequestFailed,
 }
 
 pub struct EnvSetup {

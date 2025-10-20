@@ -3,7 +3,6 @@
 use flume::SendError;
 use flume::Sender;
 use reqwest::Client;
-use reqwest::Error;
 use reqwest::Response;
 use reqwest::StatusCode;
 use reqwest::header::HeaderMap;
@@ -11,6 +10,7 @@ use sqlx::AnyPool;
 use sqlx::Pool;
 use sqlx::Row;
 use thiserror::Error;
+use url::Url;
 
 use crate::validator::Assertion;
 use crate::validator::IR;
@@ -27,6 +27,8 @@ pub enum RunnerError {
 #[derive(Debug)]
 pub struct RunnerResult {
     pub name: String,
+    pub method: String,
+    pub url: Url,
     pub response: Option<CapturedResponse>,
     pub error: Option<String>,
     pub assertions: Vec<Assertion>,
@@ -61,6 +63,8 @@ pub async fn run_tests(
         for mut test in test_group.tests {
             let client = client.clone();
             let tx = tx.clone();
+            let url = test.url.clone();
+            let method = test.method.to_string().clone();
 
             if let Some(sql_statements) = &test.before_run {
                 run_sql(&pool, sql_statements).await?
@@ -68,11 +72,11 @@ pub async fn run_tests(
 
             let result = if let Some(body) = test.body {
                 client
-                    .request(test.method, test.url)
+                    .request(test.method, url)
                     .headers(test.headers)
                     .json(&body)
             } else {
-                client.request(test.method, test.url).headers(test.headers)
+                client.request(test.method, url).headers(test.headers)
             }
             .send()
             .await;
@@ -82,12 +86,16 @@ pub async fn run_tests(
             let runner_result = match result {
                 Ok(resp) => RunnerResult {
                     name: test.name,
+                    method,
+                    url: test.url.clone(),
                     response: Some(CapturedResponse::from_response(resp).await),
                     error: None,
                     assertions: test.assertions,
                 },
                 Err(err) => RunnerResult {
                     name: test.name,
+                    method,
+                    url: test.url,
                     response: None,
                     error: Some(err.to_string()),
                     assertions: test.assertions,
