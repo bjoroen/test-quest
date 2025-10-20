@@ -6,6 +6,12 @@ pub struct Befaring {
     pub db: Db,
     pub before_each_group: Option<Hook>,
     pub test_groups: Vec<TestGroup>,
+    pub global: Global,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct Global {
+    pub headers: Option<toml::Value>,
 }
 
 #[derive(Clone, Deserialize, Debug)]
