@@ -1,7 +1,7 @@
 use serde::Deserialize;
 
 #[derive(Deserialize, Debug, Clone)]
-pub struct Befaring {
+pub struct TestQuest {
     pub setup: Setup,
     pub db: Db,
     pub before_each_group: Option<Hook>,

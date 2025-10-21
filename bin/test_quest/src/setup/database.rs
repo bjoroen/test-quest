@@ -3,6 +3,7 @@ use std::path::Path;
 use sqlx::Any;
 use sqlx::migrate::Migrator;
 use testcontainers::ContainerAsync;
+use testcontainers::ImageExt;
 use testcontainers::TestcontainersError;
 use testcontainers::runners::AsyncRunner;
 use testcontainers_modules::mariadb::Mariadb;
@@ -14,9 +15,11 @@ const POSTGRES: &str = "postgres";
 const MYSQL: &str = "mysql";
 const MARIADB: &str = "mariadb";
 
+const POSTGRES_DEFAULT_TAG: &str = "16-alpine";
+
 #[derive(Error, Debug)]
 pub enum DbError {
-    #[error("Failed to start database container")]
+    #[error("Failed to start database container {0}")]
     TestContainer(#[from] TestcontainersError),
 
     #[error("We do not support this DB type")]
@@ -71,6 +74,7 @@ pub async fn from_type(db_type: String, db_port: Option<u16>) -> Result<Database
     let database_container = match db_type.as_str() {
         POSTGRES => DatabaseContainer::Postgres(
             Postgres::default()
+                .with_tag(POSTGRES_DEFAULT_TAG)
                 .start()
                 .await
                 .map_err(DbError::TestContainer)?,

@@ -13,7 +13,7 @@ use crate::asserter::AssertResult;
 use crate::asserter::Asserter;
 use crate::cli::Cli;
 use crate::outputter::OutPutter;
-use crate::parser::Befaring;
+use crate::parser::TestQuest;
 use crate::runner::RunnerError;
 use crate::runner::RunnerResult;
 use crate::runner::run_tests;
@@ -36,7 +36,7 @@ mod setup;
 mod validator;
 
 #[derive(Error, Debug, Diagnostic)]
-pub enum BefaringError {
+pub enum TestQuestError {
     #[error("Failed to read toml file")]
     FileError(#[from] std::io::Error),
 
@@ -57,27 +57,27 @@ pub enum BefaringError {
 ///
 /// This function:
 /// - Parses CLI arguments to locate the configuration file.
-/// - Reads and deserializes the file into a `Befaring` structure from TOML.
+/// - Reads and deserializes the file into a `TestQuest` structure from TOML.
 /// - Runs a validation pass over the configuration to ensure correctness.
 /// - Returns the parsed CLI options, validated test definitions (`IR`), the
 ///   total number of tests, and the environment setup information.
 ///
 /// # Errors
-/// Returns a `BefaringError` if:
+/// Returns a `TestQuestError` if:
 /// - The file cannot be read,
 /// - The TOML fails to parse,
 /// - Or the configuration validation fails.
-async fn load_and_validate_config() -> Result<(Cli, IR, usize, EnvSetup), BefaringError> {
+async fn load_and_validate_config() -> Result<(Cli, IR, usize, EnvSetup), TestQuestError> {
     let cli = Cli::parse();
 
-    let contents = std::fs::read_to_string(&cli.path).map_err(BefaringError::FileError)?;
-    let befaring: Befaring = toml::from_str(&contents).map_err(BefaringError::TomlParsing)?;
+    let contents = std::fs::read_to_string(&cli.path).map_err(TestQuestError::FileError)?;
+    let test_quest: TestQuest = toml::from_str(&contents).map_err(TestQuestError::TomlParsing)?;
 
-    let mut validator = Validator::new(&befaring, contents.as_str(), cli.path.as_str());
+    let mut validator = Validator::new(&test_quest, contents.as_str(), cli.path.as_str());
 
     let (test_groups, setup) = validator
         .validate()
-        .map_err(BefaringError::ValidationError)?;
+        .map_err(TestQuestError::ValidationError)?;
     let n_tests = test_groups.tests.len();
 
     Ok((cli, test_groups, n_tests, setup))
@@ -179,7 +179,7 @@ async fn main() -> Result<()> {
     // database connection pool, and captured output buffers.
     let app_handle = start_db_and_app(setup)
         .await
-        .map_err(BefaringError::StartUpError)?;
+        .map_err(TestQuestError::StartUpError)?;
 
     // Spawn the main test pipeline consisting of three concurrent tasks:
     // - The test runner, which executes the HTTP requests.

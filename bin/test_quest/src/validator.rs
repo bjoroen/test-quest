@@ -11,9 +11,9 @@ use thiserror::Error;
 mod parser_assertion;
 
 use crate::parser;
-use crate::parser::Befaring;
 use crate::parser::Global;
 use crate::parser::Hook;
+use crate::parser::TestQuest;
 
 // Error messages for parsing URLs
 const BASE_URL_ENDS_WITH: &str =
@@ -22,7 +22,7 @@ const PATH_URL_MISSING_SLASH: &str =
     "The URL field in a test is required to begin with a leading /.";
 
 pub struct Validator {
-    befaring: Befaring,
+    test_quest: TestQuest,
     toml_src: String,
     file_name: String,
 }
@@ -105,9 +105,9 @@ macro_rules! validation_err {
 }
 
 impl Validator {
-    pub fn new(befaring: &Befaring, toml_src: &str, file_name: &str) -> Self {
+    pub fn new(test_quest: &TestQuest, toml_src: &str, file_name: &str) -> Self {
         Self {
-            befaring: befaring.clone(),
+            test_quest: test_quest.clone(),
             toml_src: toml_src.into(),
             file_name: file_name.into(),
         }
@@ -121,10 +121,10 @@ impl Validator {
     }
 
     fn validate_tests(&self) -> Result<IR, ValidationError> {
-        let before_each_group = self.create_before_each(&self.befaring.before_each_group)?;
+        let before_each_group = self.create_before_each(&self.test_quest.before_each_group)?;
 
         let test_groups = self
-            .befaring
+            .test_quest
             .test_groups
             .iter()
             .map(|group| {
@@ -143,8 +143,8 @@ impl Validator {
                             test,
                             file_name.as_ref(),
                             toml_src.as_ref(),
-                            &self.befaring.setup.base_url,
-                            &self.befaring.global,
+                            &self.test_quest.setup.base_url,
+                            &self.test_quest.global,
                         )
                     })
                     .collect::<Result<Vec<_>, ValidationError>>()?;
@@ -166,15 +166,15 @@ impl Validator {
 
     fn validate_setup(&self) -> Result<EnvSetup, ValidationError> {
         Ok(EnvSetup {
-            base_url: self.befaring.setup.base_url.clone(),
-            command: self.befaring.setup.command.clone(),
-            args: self.befaring.setup.args.clone(),
-            ready_when: self.befaring.setup.ready_when.clone(),
-            db_type: self.befaring.db.db_type.clone(),
-            migration_dir: Some(self.befaring.db.migration_dir.clone()),
-            db_port: self.befaring.db.port,
+            base_url: self.test_quest.setup.base_url.clone(),
+            command: self.test_quest.setup.command.clone(),
+            args: self.test_quest.setup.args.clone(),
+            ready_when: self.test_quest.setup.ready_when.clone(),
+            db_type: self.test_quest.db.db_type.clone(),
+            migration_dir: Some(self.test_quest.db.migration_dir.clone()),
+            db_port: self.test_quest.db.port,
             database_url_env: self
-                .befaring
+                .test_quest
                 .setup
                 .database_url_env
                 .clone()
