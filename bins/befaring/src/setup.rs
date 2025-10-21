@@ -41,12 +41,7 @@ pub async fn start_db_and_app(env_setup: EnvSetup) -> Result<AppHandle, StartUpE
         database_url_env,
     } = env_setup;
 
-    println!(
-        "{}",
-        console::style("[SETUP] setting up database container! ⚙️")
-            .bold()
-            .yellow()
-    );
+    print_with_color("[SETUP] setting up database container! ⚙️");
 
     let Database {
         database_container,
@@ -55,23 +50,13 @@ pub async fn start_db_and_app(env_setup: EnvSetup) -> Result<AppHandle, StartUpE
         .await
         .map_err(StartUpError::DatabaseError)?;
 
-    println!(
-        "{}",
-        console::style("[SETUP] connecting to database! ⚙️")
-            .bold()
-            .yellow()
-    );
+    print_with_color("[SETUP] connecting to database! ⚙️");
 
     let pool = database::connection_pool(&database_url)
         .await
         .map_err(StartUpError::DatabaseError)?;
 
-    println!(
-        "{}",
-        console::style("[SETUP] waiting for database to be ready..! ⚙️")
-            .bold()
-            .yellow()
-    );
+    print_with_color("[SETUP] waiting for database to be ready..! ⚙️");
 
     if let Err(e) = database::wait_for_db(&pool).await {
         return Err(StartUpError::DatabaseError(e));
@@ -83,23 +68,13 @@ pub async fn start_db_and_app(env_setup: EnvSetup) -> Result<AppHandle, StartUpE
             .map_err(StartUpError::DatabaseError)?;
     };
 
-    println!(
-        "{}",
-        console::style("[SETUP] setting up app..! ⚙️")
-            .bold()
-            .yellow()
-    );
+    print_with_color("[SETUP] setting up app..! ⚙️");
 
     let child = app::from_command(command, args, database_url_env, database_url)
         .await
         .map_err(StartUpError::AppError)?;
 
-    println!(
-        "{}",
-        console::style("[SETUP] waiting for app to be ready..! ⚙️")
-            .bold()
-            .yellow()
-    );
+    print_with_color("[SETUP] waiting for app to be ready..! ⚙️");
 
     if let Err(error) = app::wait_for_app_ready(base_url.as_str(), ready_when.as_str()).await {
         let mut lock = child.process.lock().await;
@@ -108,9 +83,15 @@ pub async fn start_db_and_app(env_setup: EnvSetup) -> Result<AppHandle, StartUpE
         return Err(StartUpError::AppTimeout(error));
     }
 
+    print_with_color("[SETUP] App is ready to rock and roll..! ⚙️");
+
     Ok(AppHandle {
         child,
         database_container,
         pool,
     })
+}
+
+fn print_with_color(s: &str) {
+    println!("{}", console::style(s).bold().yellow());
 }

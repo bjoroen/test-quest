@@ -32,6 +32,7 @@ method = "POST"
 url = "/login"
 headers = { Authorization = "api-key 234-1234-1234-1234" }
 body = { username = "Harry Potter", password = "1234" }
+
 assert_status = 200
 assert_headers = { Content-Type = "application/json" }
 
