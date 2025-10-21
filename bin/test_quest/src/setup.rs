@@ -39,6 +39,7 @@ pub async fn start_db_and_app(env_setup: EnvSetup) -> Result<AppHandle, StartUpE
         migration_dir,
         db_port,
         database_url_env,
+        init_sql,
     } = env_setup;
 
     print_with_color("[SETUP] setting up database container! ⚙️");
@@ -64,6 +65,13 @@ pub async fn start_db_and_app(env_setup: EnvSetup) -> Result<AppHandle, StartUpE
 
     if let Some(migration_dir) = migration_dir {
         database::run_migrations(&pool, &migration_dir)
+            .await
+            .map_err(StartUpError::DatabaseError)?;
+    };
+
+    if let Some(path) = init_sql {
+        print_with_color("[SETUP] loading init sql..! ⚙️");
+        database::load_init_sql(&pool, path)
             .await
             .map_err(StartUpError::DatabaseError)?;
     };

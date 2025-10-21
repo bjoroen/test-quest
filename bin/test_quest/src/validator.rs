@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::str::FromStr;
 
 use miette::Diagnostic;
@@ -49,6 +50,7 @@ pub struct EnvSetup {
     pub migration_dir: Option<String>,
     pub db_port: Option<u16>,
     pub database_url_env: String,
+    pub init_sql: Option<PathBuf>,
 }
 
 pub struct IR {
@@ -165,6 +167,8 @@ impl Validator {
     }
 
     fn validate_setup(&self) -> Result<EnvSetup, ValidationError> {
+        let path = self.test_quest.db.init_sql.as_ref().map(PathBuf::from);
+
         Ok(EnvSetup {
             base_url: self.test_quest.setup.base_url.clone(),
             command: self.test_quest.setup.command.clone(),
@@ -173,6 +177,7 @@ impl Validator {
             db_type: self.test_quest.db.db_type.clone(),
             migration_dir: Some(self.test_quest.db.migration_dir.clone()),
             db_port: self.test_quest.db.port,
+            init_sql: path,
             database_url_env: self
                 .test_quest
                 .setup
@@ -208,7 +213,7 @@ impl Validator {
             validation_err!(format!("{} - method", test.name), e, self, &test.method)
         })?;
 
-        let url = parse_url(base_url, &test.url).map_err(|e| match e {
+        let url = parse_url(base_url, &test.url, test.query.as_deref()).map_err(|e| match e {
             ParseUrlError::SetupUrlEndsWithSlash => {
                 validation_err!("setup.base_url", BASE_URL_ENDS_WITH, self, &base_url)
             }
@@ -286,7 +291,7 @@ enum ParseUrlError {
     #[error("Failed to parse URL: {0}")]
     ParseIntoUrlFailed(#[from] url::ParseError),
 }
-fn parse_url(base_url: &str, path_url: &str) -> Result<Url, ParseUrlError> {
+fn parse_url(base_url: &str, path_url: &str, query: Option<&str>) -> Result<Url, ParseUrlError> {
     if base_url.ends_with("/") {
         return Err(ParseUrlError::SetupUrlEndsWithSlash);
     }
@@ -295,8 +300,13 @@ fn parse_url(base_url: &str, path_url: &str) -> Result<Url, ParseUrlError> {
         return Err(ParseUrlError::PathUrlMissingSlash);
     }
 
-    let url = reqwest::Url::parse(&format!("{base_url}{path_url}"))
-        .map_err(ParseUrlError::ParseIntoUrlFailed)?;
+    let url_string = query.map_or_else(
+        || format!("{base_url}{path_url}"),
+        |query| format!("{base_url}{path_url}{query}"),
+    );
+
+    let url =
+        reqwest::Url::parse(url_string.as_str()).map_err(ParseUrlError::ParseIntoUrlFailed)?;
 
     Ok(url)
 }

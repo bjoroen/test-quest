@@ -25,14 +25,17 @@ pub enum DbError {
     #[error("We do not support this DB type")]
     UnknownDb,
 
-    #[error("faild to connect to database: {0}")]
-    FailedToConnect(#[from] sqlx::Error),
+    #[error("database failed with error: {0}")]
+    DatabaseError(#[from] sqlx::Error),
 
     #[error("faild to run migrations: {0}")]
     MigrationError(#[from] sqlx::migrate::MigrateError),
 
     #[error("timedout while waiting for database to be ready")]
     DatabaseTimeout,
+
+    #[error("Failed to load initial sql {0}")]
+    InitSql(#[from] std::io::Error),
 }
 
 /// Represents a running test container for a specific database type.
@@ -144,7 +147,7 @@ pub async fn connection_pool(database_url: &str) -> Result<sqlx::Pool<Any>, DbEr
 
     sqlx::Pool::<sqlx::Any>::connect(database_url)
         .await
-        .map_err(DbError::FailedToConnect)
+        .map_err(DbError::DatabaseError)
 }
 
 /// Runs database migrations from the specified directory using a generic `Any`
@@ -157,6 +160,20 @@ pub async fn run_migrations(pool: &sqlx::Pool<Any>, migration_dir: &str) -> Resu
         .map_err(DbError::MigrationError)?;
 
     m.run(pool).await.map_err(DbError::MigrationError)?;
+
+    Ok(())
+}
+
+pub async fn load_init_sql(
+    pool: &sqlx::Pool<Any>,
+    path: std::path::PathBuf,
+) -> Result<(), DbError> {
+    let sql = std::fs::read_to_string(path).map_err(DbError::InitSql)?;
+
+    sqlx::raw_sql(sql.as_str())
+        .execute(pool)
+        .await
+        .map_err(DbError::DatabaseError)?;
 
     Ok(())
 }
