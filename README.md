@@ -1,5 +1,8 @@
 # Befaring
-![Befaring](https://github.com/user-attachments/assets/a0523968-6340-4889-a602-e4f7268529f9)
+<p align="center">
+    <img width="512" height="512" alt="Image" src="https://github.com/user-attachments/assets/673eff60-9a74-4092-a5b5-20fadba0c20f" />
+</p>
+
 
 A declarative end-to-end testing framework for APIs.
 Tests are defined in TOML files, so they are language-agnostic and easy to share across projects.
