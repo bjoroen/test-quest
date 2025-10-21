@@ -1,7 +1,7 @@
 use serde::Deserialize;
 
 #[derive(Deserialize, Debug, Clone)]
-pub struct Befaring {
+pub struct TestQuest {
     pub setup: Setup,
     pub db: Db,
     pub before_each_group: Option<Hook>,
@@ -19,6 +19,7 @@ pub struct Db {
     pub db_type: String,
     pub migration_dir: String,
     pub port: Option<u16>,
+    pub init_sql: Option<String>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -56,7 +57,7 @@ pub struct Test {
     pub method: String,
     pub headers: Option<toml::Value>,
     pub url: String,
-    // Should be json body
+    pub query: Option<String>,
     pub body: Option<serde_json::Value>,
     pub assert_status: Option<i32>,
     pub assert_headers: Option<toml::Value>,

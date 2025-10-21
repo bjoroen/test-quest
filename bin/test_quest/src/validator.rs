@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::str::FromStr;
 
 use miette::Diagnostic;
@@ -11,9 +12,9 @@ use thiserror::Error;
 mod parser_assertion;
 
 use crate::parser;
-use crate::parser::Befaring;
 use crate::parser::Global;
 use crate::parser::Hook;
+use crate::parser::TestQuest;
 
 // Error messages for parsing URLs
 const BASE_URL_ENDS_WITH: &str =
@@ -22,7 +23,7 @@ const PATH_URL_MISSING_SLASH: &str =
     "The URL field in a test is required to begin with a leading /.";
 
 pub struct Validator {
-    befaring: Befaring,
+    test_quest: TestQuest,
     toml_src: String,
     file_name: String,
 }
@@ -49,6 +50,7 @@ pub struct EnvSetup {
     pub migration_dir: Option<String>,
     pub db_port: Option<u16>,
     pub database_url_env: String,
+    pub init_sql: Option<PathBuf>,
 }
 
 pub struct IR {
@@ -105,9 +107,9 @@ macro_rules! validation_err {
 }
 
 impl Validator {
-    pub fn new(befaring: &Befaring, toml_src: &str, file_name: &str) -> Self {
+    pub fn new(test_quest: &TestQuest, toml_src: &str, file_name: &str) -> Self {
         Self {
-            befaring: befaring.clone(),
+            test_quest: test_quest.clone(),
             toml_src: toml_src.into(),
             file_name: file_name.into(),
         }
@@ -121,10 +123,10 @@ impl Validator {
     }
 
     fn validate_tests(&self) -> Result<IR, ValidationError> {
-        let before_each_group = self.create_before_each(&self.befaring.before_each_group)?;
+        let before_each_group = self.create_before_each(&self.test_quest.before_each_group)?;
 
         let test_groups = self
-            .befaring
+            .test_quest
             .test_groups
             .iter()
             .map(|group| {
@@ -143,8 +145,8 @@ impl Validator {
                             test,
                             file_name.as_ref(),
                             toml_src.as_ref(),
-                            &self.befaring.setup.base_url,
-                            &self.befaring.global,
+                            &self.test_quest.setup.base_url,
+                            &self.test_quest.global,
                         )
                     })
                     .collect::<Result<Vec<_>, ValidationError>>()?;
@@ -165,16 +167,19 @@ impl Validator {
     }
 
     fn validate_setup(&self) -> Result<EnvSetup, ValidationError> {
+        let path = self.test_quest.db.init_sql.as_ref().map(PathBuf::from);
+
         Ok(EnvSetup {
-            base_url: self.befaring.setup.base_url.clone(),
-            command: self.befaring.setup.command.clone(),
-            args: self.befaring.setup.args.clone(),
-            ready_when: self.befaring.setup.ready_when.clone(),
-            db_type: self.befaring.db.db_type.clone(),
-            migration_dir: Some(self.befaring.db.migration_dir.clone()),
-            db_port: self.befaring.db.port,
+            base_url: self.test_quest.setup.base_url.clone(),
+            command: self.test_quest.setup.command.clone(),
+            args: self.test_quest.setup.args.clone(),
+            ready_when: self.test_quest.setup.ready_when.clone(),
+            db_type: self.test_quest.db.db_type.clone(),
+            migration_dir: Some(self.test_quest.db.migration_dir.clone()),
+            db_port: self.test_quest.db.port,
+            init_sql: path,
             database_url_env: self
-                .befaring
+                .test_quest
                 .setup
                 .database_url_env
                 .clone()
@@ -208,7 +213,7 @@ impl Validator {
             validation_err!(format!("{} - method", test.name), e, self, &test.method)
         })?;
 
-        let url = parse_url(base_url, &test.url).map_err(|e| match e {
+        let url = parse_url(base_url, &test.url, test.query.as_deref()).map_err(|e| match e {
             ParseUrlError::SetupUrlEndsWithSlash => {
                 validation_err!("setup.base_url", BASE_URL_ENDS_WITH, self, &base_url)
             }
@@ -286,7 +291,7 @@ enum ParseUrlError {
     #[error("Failed to parse URL: {0}")]
     ParseIntoUrlFailed(#[from] url::ParseError),
 }
-fn parse_url(base_url: &str, path_url: &str) -> Result<Url, ParseUrlError> {
+fn parse_url(base_url: &str, path_url: &str, query: Option<&str>) -> Result<Url, ParseUrlError> {
     if base_url.ends_with("/") {
         return Err(ParseUrlError::SetupUrlEndsWithSlash);
     }
@@ -295,8 +300,13 @@ fn parse_url(base_url: &str, path_url: &str) -> Result<Url, ParseUrlError> {
         return Err(ParseUrlError::PathUrlMissingSlash);
     }
 
-    let url = reqwest::Url::parse(&format!("{base_url}{path_url}"))
-        .map_err(ParseUrlError::ParseIntoUrlFailed)?;
+    let url_string = query.map_or_else(
+        || format!("{base_url}{path_url}"),
+        |query| format!("{base_url}{path_url}{query}"),
+    );
+
+    let url =
+        reqwest::Url::parse(url_string.as_str()).map_err(ParseUrlError::ParseIntoUrlFailed)?;
 
     Ok(url)
 }

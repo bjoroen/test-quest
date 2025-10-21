@@ -1,7 +1,4 @@
 [workspace]
 resolver = "3"
 
-members = [
-    "bins/befaring",
-    "utils/test_app"
-]
+members = ["bin/test_quest", "utils/test_app"]

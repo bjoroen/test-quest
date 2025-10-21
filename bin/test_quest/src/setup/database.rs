@@ -3,6 +3,7 @@ use std::path::Path;
 use sqlx::Any;
 use sqlx::migrate::Migrator;
 use testcontainers::ContainerAsync;
+use testcontainers::ImageExt;
 use testcontainers::TestcontainersError;
 use testcontainers::runners::AsyncRunner;
 use testcontainers_modules::mariadb::Mariadb;
@@ -14,22 +15,27 @@ const POSTGRES: &str = "postgres";
 const MYSQL: &str = "mysql";
 const MARIADB: &str = "mariadb";
 
+const POSTGRES_DEFAULT_TAG: &str = "16-alpine";
+
 #[derive(Error, Debug)]
 pub enum DbError {
-    #[error("Failed to start database container")]
+    #[error("Failed to start database container {0}")]
     TestContainer(#[from] TestcontainersError),
 
     #[error("We do not support this DB type")]
     UnknownDb,
 
-    #[error("faild to connect to database: {0}")]
-    FailedToConnect(#[from] sqlx::Error),
+    #[error("database failed with error: {0}")]
+    DatabaseError(#[from] sqlx::Error),
 
     #[error("faild to run migrations: {0}")]
     MigrationError(#[from] sqlx::migrate::MigrateError),
 
     #[error("timedout while waiting for database to be ready")]
     DatabaseTimeout,
+
+    #[error("Failed to load initial sql {0}")]
+    InitSql(#[from] std::io::Error),
 }
 
 /// Represents a running test container for a specific database type.
@@ -71,6 +77,7 @@ pub async fn from_type(db_type: String, db_port: Option<u16>) -> Result<Database
     let database_container = match db_type.as_str() {
         POSTGRES => DatabaseContainer::Postgres(
             Postgres::default()
+                .with_tag(POSTGRES_DEFAULT_TAG)
                 .start()
                 .await
                 .map_err(DbError::TestContainer)?,
@@ -140,7 +147,7 @@ pub async fn connection_pool(database_url: &str) -> Result<sqlx::Pool<Any>, DbEr
 
     sqlx::Pool::<sqlx::Any>::connect(database_url)
         .await
-        .map_err(DbError::FailedToConnect)
+        .map_err(DbError::DatabaseError)
 }
 
 /// Runs database migrations from the specified directory using a generic `Any`
@@ -153,6 +160,20 @@ pub async fn run_migrations(pool: &sqlx::Pool<Any>, migration_dir: &str) -> Resu
         .map_err(DbError::MigrationError)?;
 
     m.run(pool).await.map_err(DbError::MigrationError)?;
+
+    Ok(())
+}
+
+pub async fn load_init_sql(
+    pool: &sqlx::Pool<Any>,
+    path: std::path::PathBuf,
+) -> Result<(), DbError> {
+    let sql = std::fs::read_to_string(path).map_err(DbError::InitSql)?;
+
+    sqlx::raw_sql(sql.as_str())
+        .execute(pool)
+        .await
+        .map_err(DbError::DatabaseError)?;
 
     Ok(())
 }
