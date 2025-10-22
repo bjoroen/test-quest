@@ -20,6 +20,13 @@ pub struct Db {
     pub migration_dir: String,
     pub port: Option<u16>,
     pub init_sql: Option<String>,
+    pub image_ref: Option<ImageRef>,
+}
+
+#[derive(Clone, Deserialize, Debug)]
+pub struct ImageRef {
+    pub name: String,
+    pub tag: String,
 }
 
 #[derive(Deserialize, Debug, Clone)]

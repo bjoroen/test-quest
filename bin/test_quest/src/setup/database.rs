@@ -11,6 +11,8 @@ use testcontainers_modules::mysql::Mysql;
 use testcontainers_modules::postgres::Postgres;
 use thiserror::Error;
 
+use crate::parser::ImageRef;
+
 const POSTGRES: &str = "postgres";
 const MYSQL: &str = "mysql";
 const MARIADB: &str = "mariadb";
@@ -73,15 +75,25 @@ pub struct Database {
 ///
 /// Returns `DbError::UnknownDb` if the database type is unrecognized, or
 /// `DbError::TestContainer` if starting the container fails.
-pub async fn from_type(db_type: String, db_port: Option<u16>) -> Result<Database, DbError> {
+pub async fn from_type(
+    db_type: String,
+    db_port: Option<u16>,
+    image_ref: Option<ImageRef>,
+) -> Result<Database, DbError> {
     let database_container = match db_type.as_str() {
-        POSTGRES => DatabaseContainer::Postgres(
-            Postgres::default()
-                .with_tag(POSTGRES_DEFAULT_TAG)
-                .start()
-                .await
-                .map_err(DbError::TestContainer)?,
-        ),
+        POSTGRES => {
+            let container = image_ref.map_or_else(
+                || Postgres::default().with_tag(POSTGRES_DEFAULT_TAG),
+                |image_ref| {
+                    Postgres::default()
+                        .with_tag(POSTGRES_DEFAULT_TAG)
+                        .with_name(image_ref.name)
+                        .with_tag(image_ref.tag)
+                },
+            );
+
+            DatabaseContainer::Postgres(container.start().await.map_err(DbError::TestContainer)?)
+        }
         MYSQL => DatabaseContainer::Mysql(
             Mysql::default()
                 .start()

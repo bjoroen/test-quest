@@ -14,6 +14,7 @@ mod parser_assertion;
 use crate::parser;
 use crate::parser::Global;
 use crate::parser::Hook;
+use crate::parser::ImageRef;
 use crate::parser::TestQuest;
 
 // Error messages for parsing URLs
@@ -51,6 +52,7 @@ pub struct EnvSetup {
     pub db_port: Option<u16>,
     pub database_url_env: String,
     pub init_sql: Option<PathBuf>,
+    pub image_ref: Option<ImageRef>,
 }
 
 pub struct IR {
@@ -178,6 +180,7 @@ impl Validator {
             migration_dir: Some(self.test_quest.db.migration_dir.clone()),
             db_port: self.test_quest.db.port,
             init_sql: path,
+            image_ref: self.test_quest.db.image_ref.clone(),
             database_url_env: self
                 .test_quest
                 .setup

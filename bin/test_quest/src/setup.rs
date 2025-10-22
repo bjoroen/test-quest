@@ -40,6 +40,7 @@ pub async fn start_db_and_app(env_setup: EnvSetup) -> Result<AppHandle, StartUpE
         db_port,
         database_url_env,
         init_sql,
+        image_ref,
     } = env_setup;
 
     print_with_color("[SETUP] setting up database container! ⚙️");
@@ -47,7 +48,7 @@ pub async fn start_db_and_app(env_setup: EnvSetup) -> Result<AppHandle, StartUpE
     let Database {
         database_container,
         database_url,
-    } = database::from_type(db_type, db_port)
+    } = database::from_type(db_type, db_port, image_ref)
         .await
         .map_err(StartUpError::DatabaseError)?;
 
