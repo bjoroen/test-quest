@@ -5,6 +5,7 @@ use sqlx::migrate::Migrator;
 use testcontainers::ContainerAsync;
 use testcontainers::ImageExt;
 use testcontainers::TestcontainersError;
+use testcontainers::core::ContainerPort;
 use testcontainers::runners::AsyncRunner;
 use testcontainers_modules::mariadb::Mariadb;
 use testcontainers_modules::mysql::Mysql;
@@ -92,7 +93,13 @@ pub async fn from_type(
                 },
             );
 
-            DatabaseContainer::Postgres(container.start().await.map_err(DbError::TestContainer)?)
+            DatabaseContainer::Postgres(
+                container
+                    .with_mapped_port(5432, ContainerPort::Tcp(5432))
+                    .start()
+                    .await
+                    .map_err(DbError::TestContainer)?,
+            )
         }
         MYSQL => DatabaseContainer::Mysql(
             Mysql::default()
