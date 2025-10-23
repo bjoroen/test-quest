@@ -11,4 +11,9 @@ pub struct Cli {
     /// App stdout and stderr at the end
     #[arg(short = 'o', long)]
     pub app_output: bool,
+
+    /// If this is sat by running --stream-app, the output from the application
+    /// while be printed as it comes
+    #[arg(long)]
+    pub stream_app: bool,
 }

@@ -45,6 +45,7 @@ pub async fn from_command(
     args: Option<Vec<String>>,
     database_env: String,
     database_url: String,
+    stream_app: bool,
 ) -> Result<AppProcess, AppError> {
     let output_buffer = Arc::new(Mutex::new(Vec::new()));
 
@@ -73,6 +74,10 @@ pub async fn from_command(
         let mut reader = BufReader::new(stdout).lines();
         while let Ok(Some(line)) = reader.next_line().await {
             let mut buffer = stdout_task_buffer.lock().await;
+            if stream_app {
+                println!("[ STDOUT ] {line}")
+            }
+
             buffer.push(OutputLine {
                 source: OutputSource::StdOut,
                 line,
@@ -86,6 +91,9 @@ pub async fn from_command(
         let mut reader = BufReader::new(stderr).lines();
         while let Ok(Some(line)) = reader.next_line().await {
             let mut buffer = stderr_task_buffer.lock().await;
+            if stream_app {
+                println!("[ stderr ] {line}")
+            }
             buffer.push(OutputLine {
                 source: OutputSource::StdErr,
                 line,

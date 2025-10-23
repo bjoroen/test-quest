@@ -29,7 +29,10 @@ pub enum StartUpError {
     AppTimeout(AppError),
 }
 
-pub async fn start_db_and_app(env_setup: EnvSetup) -> Result<AppHandle, StartUpError> {
+pub async fn start_db_and_app(
+    env_setup: EnvSetup,
+    stream_app: bool,
+) -> Result<AppHandle, StartUpError> {
     let EnvSetup {
         base_url,
         command,
@@ -79,7 +82,7 @@ pub async fn start_db_and_app(env_setup: EnvSetup) -> Result<AppHandle, StartUpE
 
     print_with_color("[SETUP] setting up app..! ⚙️");
 
-    let child = app::from_command(command, args, database_url_env, database_url)
+    let child = app::from_command(command, args, database_url_env, database_url, stream_app)
         .await
         .map_err(StartUpError::AppError)?;
 
