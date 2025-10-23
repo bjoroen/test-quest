@@ -67,6 +67,7 @@ pub struct TestGroups {
     pub tests: Vec<ValidatedTests>,
 }
 
+#[derive(Clone)]
 pub struct BeforeEach {
     pub reset_db: Option<bool>,
     pub sql: Option<Vec<String>>,
@@ -74,7 +75,9 @@ pub struct BeforeEach {
 
 #[derive(Clone)]
 pub struct ValidatedTests {
-    pub before_run: Option<Vec<String>>,
+    // TODO: Naming here is not optimal, some should be named before_each, but for tests its
+    // before_run that makes the most sense
+    pub before_run: Option<BeforeEach>,
     pub name: String,
     pub method: Method,
     pub url: Url,
@@ -168,42 +171,6 @@ impl Validator {
         })
     }
 
-    fn validate_setup(&self) -> Result<EnvSetup, ValidationError> {
-        let path = self.test_quest.db.init_sql.as_ref().map(PathBuf::from);
-
-        Ok(EnvSetup {
-            base_url: self.test_quest.setup.base_url.clone(),
-            command: self.test_quest.setup.command.clone(),
-            args: self.test_quest.setup.args.clone(),
-            ready_when: self.test_quest.setup.ready_when.clone(),
-            db_type: self.test_quest.db.db_type.clone(),
-            migration_dir: Some(self.test_quest.db.migration_dir.clone()),
-            db_port: self.test_quest.db.port,
-            init_sql: path,
-            image_ref: self.test_quest.db.image_ref.clone(),
-            database_url_env: self
-                .test_quest
-                .setup
-                .database_url_env
-                .clone()
-                .unwrap_or("DATABASE_URL".into()),
-        })
-    }
-
-    fn create_before_each(
-        &self,
-        hook: &Option<Hook>,
-    ) -> Result<Option<BeforeEach>, ValidationError> {
-        if let Some(hook) = hook {
-            Ok(Some(BeforeEach {
-                reset_db: Some(hook.reset.unwrap_or(false)),
-                sql: Some(hook.run_sql.clone().unwrap_or_default()),
-            }))
-        } else {
-            Ok(None)
-        }
-    }
-
     fn create_test(
         &self,
         test: &parser::Test,
@@ -237,7 +204,7 @@ impl Validator {
 
         let body = test.body.clone();
         let name = test.name.clone();
-        let before_run = test.before_run.clone();
+        let before_run = self.create_before_each(&test.before_run)?;
 
         // Start with the global headers if defined, and add them to the request's
         // HeaderMap. Then, merge the headers from the individual test. If a
@@ -282,6 +249,42 @@ impl Validator {
             url,
             assertions,
         })
+    }
+
+    fn validate_setup(&self) -> Result<EnvSetup, ValidationError> {
+        let path = self.test_quest.db.init_sql.as_ref().map(PathBuf::from);
+
+        Ok(EnvSetup {
+            base_url: self.test_quest.setup.base_url.clone(),
+            command: self.test_quest.setup.command.clone(),
+            args: self.test_quest.setup.args.clone(),
+            ready_when: self.test_quest.setup.ready_when.clone(),
+            db_type: self.test_quest.db.db_type.clone(),
+            migration_dir: Some(self.test_quest.db.migration_dir.clone()),
+            db_port: self.test_quest.db.port,
+            init_sql: path,
+            image_ref: self.test_quest.db.image_ref.clone(),
+            database_url_env: self
+                .test_quest
+                .setup
+                .database_url_env
+                .clone()
+                .unwrap_or("DATABASE_URL".into()),
+        })
+    }
+
+    fn create_before_each(
+        &self,
+        hook: &Option<Hook>,
+    ) -> Result<Option<BeforeEach>, ValidationError> {
+        if let Some(hook) = hook {
+            Ok(Some(BeforeEach {
+                reset_db: Some(hook.reset.unwrap_or(false)),
+                sql: Some(hook.run_sql.clone().unwrap_or_default()),
+            }))
+        } else {
+            Ok(None)
+        }
     }
 }
 

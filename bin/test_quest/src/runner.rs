@@ -68,8 +68,17 @@ pub async fn run_tests(
             let url = test.url.clone();
             let method = test.method.to_string().clone();
 
-            if let Some(sql_statements) = &test.before_run {
-                run_sql(&pool, sql_statements).await?
+            // TODO: Duplicated logic with the one above
+            if let Some(before) = test.before_run {
+                if before.reset_db.is_some_and(|b| b) {
+                    reset_database(&pool)
+                        .await
+                        .map_err(RunnerError::DatabaseError)?;
+                }
+
+                if let Some(sql_statements) = &before.sql {
+                    run_sql(&pool, sql_statements).await?
+                }
             }
 
             let result = if let Some(body) = test.body {
@@ -150,7 +159,7 @@ pub async fn run_sql_assertions(assertions: &mut [Assertion], pool: &AnyPool) {
 
 async fn run_sql(pool: &AnyPool, sql_statements: &Vec<String>) -> Result<(), RunnerError> {
     for sql in sql_statements {
-        sqlx::query(sql.as_str())
+        sqlx::raw_sql(sql.as_str())
             .execute(pool)
             .await
             .map_err(RunnerError::DatabaseError)?;
@@ -161,50 +170,6 @@ async fn run_sql(pool: &AnyPool, sql_statements: &Vec<String>) -> Result<(), Run
 
 pub async fn reset_database(pool: &AnyPool) -> Result<(), sqlx::Error> {
     let mut conn = pool.acquire().await?;
-
-    // Try SQLite schema
-    let sqlite_tables_res = sqlx::query(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'",
-    )
-    .try_map(|row: sqlx::any::AnyRow| row.try_get::<String, _>("name"))
-    .fetch_all(&mut *conn)
-    .await;
-
-    let tables: Vec<String> = match sqlite_tables_res {
-        Ok(t) if !t.is_empty() => t,
-        _ => {
-            sqlx::query(
-                "SELECT table_name::text AS table_name
-                 FROM information_schema.tables
-                 WHERE table_schema = current_schema()
-                 AND table_type = 'BASE TABLE'",
-            )
-            .try_map(|row: sqlx::any::AnyRow| row.try_get::<String, _>("table_name"))
-            .fetch_all(&mut *conn)
-            .await?
-        }
-    };
-
-    for table in tables {
-        match sqlx::query(&format!("TRUNCATE TABLE {table} CASCADE"))
-            .execute(&mut *conn)
-            .await
-        {
-            Ok(_) => { /* truncated successfully */ }
-            Err(_) => {
-                sqlx::query(&format!("DELETE FROM {table}"))
-                    .execute(&mut *conn)
-                    .await?;
-            }
-        }
-
-        // Postgres sequence reset
-        let reset_seq_sql_pg = format!(
-            "DO $$ BEGIN IF EXISTS (SELECT 1 FROM pg_class WHERE relname = '{table}_id_seq') THEN \
-             EXECUTE 'ALTER SEQUENCE {table}_id_seq RESTART WITH 1'; END IF; END $$;"
-        );
-        let _ = sqlx::query(&reset_seq_sql_pg).execute(&mut *conn).await;
-    }
 
     Ok(())
 }

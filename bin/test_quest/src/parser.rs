@@ -60,9 +60,10 @@ pub struct AssertSql {
     pub query: String,
     pub expect: String,
 }
+
 #[derive(Deserialize, Debug, Clone)]
 pub struct Test {
-    pub before_run: Option<Vec<String>>,
+    pub before_run: Option<Hook>,
     pub name: String,
     pub method: String,
     pub headers: Option<toml::Value>,

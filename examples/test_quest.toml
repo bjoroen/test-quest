@@ -4,11 +4,13 @@ command = "cargo"
 args = ["r", "-p", "test_app"]
 ready_when = "/health"
 database_url_env = "DATABASE_URL"
+env = { RUN_MODE = "local" }
 
 [db]
 db_type = "postgres"
 migration_dir = "./utils/test_app/migrations"
 image_ref = { name = "postgis/postgis", tag = "15-3.5-alpine" }
+database_name = "test_db"
 
 [global]
 headers = { Authorization = "api-key 1234-1234-1234-1234" }
@@ -83,17 +85,24 @@ assert_status = 200
 assert_json = { id = 1, name = "Alice", password = "23" }
 
 [[test_groups.tests]]
-before_run = [
+before_run = { reset_db = true, run_sql = [
   "INSERT INTO users (id, name, password) VALUES (1, 'Alice', '123') ON CONFLICT (id) DO NOTHING;",
-]
+  "INSERT INTO users (id, name, password) VALUES (2, 'Alice', '123') ON CONFLICT (id) DO NOTHING;",
+  "INSERT INTO users (id, name, password) VALUES (6, 'Harry Plotter', '123') ON CONFLICT (id) DO NOTHING;",
+] }
 name = "GetUser"
 method = "GET"
 url = "/users/1"
 assert_status = 200
 
 [[test_groups.tests]]
+before_run = { run_sql = [
+  "DELETE FROM users;",
+  "INSERT INTO users (id, name, password) VALUES (10, 'Alice', '123') ON CONFLICT (id) DO NOTHING;",
+] }
 name = "CreateUser"
 method = "POST"
 url = "/users"
 body = { name = "Bob" }
 assert_status = 201
+assert_sql = { query = "SELECT name || ' - ' || id FROM users;", expect = "Harry Potter" }
