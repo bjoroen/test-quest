@@ -3,14 +3,12 @@ base_url = "http://localhost:6969"
 command = "cargo"
 args = ["r", "-p", "test_app"]
 ready_when = "/health"
-database_url_env = "DATABASE_URL"
-env = { RUN_MODE = "local" }
+env = { SOME_ENV = "some_env_value" }
 
 [db]
 db_type = "postgres"
 migration_dir = "./utils/test_app/migrations"
 image_ref = { name = "postgis/postgis", tag = "15-3.5-alpine" }
-database_name = "test_db"
 
 [global]
 headers = { Authorization = "api-key 1234-1234-1234-1234" }
