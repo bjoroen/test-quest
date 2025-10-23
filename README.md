@@ -6,7 +6,7 @@
 
 A declarative end-to-end testing framework for APIs.
 Tests are defined in TOML files, so they are language-agnostic and easy to share across projects.
-The runner executes your tests by sending HTTP requests, checking responses, and (optionally) inspecting the database or mocks.
+The runner executes your tests by sending HTTP requests, checking responses, and (optionally) inspecting the database.
 
 ## Example
 
