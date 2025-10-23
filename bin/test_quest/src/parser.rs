@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use serde::Deserialize;
 
 #[derive(Deserialize, Debug, Clone)]
@@ -36,6 +38,7 @@ pub struct Setup {
     pub args: Option<Vec<String>>,
     pub ready_when: String,
     pub database_url_env: Option<String>,
+    pub env: Option<HashMap<String, String>>,
 }
 
 #[derive(Deserialize, Debug, Clone)]

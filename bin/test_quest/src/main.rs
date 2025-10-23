@@ -1,6 +1,7 @@
 #![allow(clippy::result_large_err)]
 #![allow(dead_code)]
 
+use std::env;
 use std::sync::Arc;
 
 use clap::Parser;
@@ -72,6 +73,18 @@ async fn load_and_validate_config() -> Result<(Cli, IR, usize, EnvSetup), TestQu
 
     let contents = std::fs::read_to_string(&cli.path).map_err(TestQuestError::FileError)?;
     let test_quest: TestQuest = toml::from_str(&contents).map_err(TestQuestError::TomlParsing)?;
+
+    if let Some(ref env_vars) = test_quest.setup.env {
+        for (key, value) in env_vars {
+            // SAFETY:
+            // No other threads or child processes have been spawned yet, and environment
+            // variables are only being modified in the current process. Therefore, calling
+            // `env::set_var` here is safe.
+            unsafe {
+                env::set_var(key, value);
+            }
+        }
+    }
 
     let mut validator = Validator::new(&test_quest, contents.as_str(), cli.path.as_str());
 
@@ -177,7 +190,7 @@ async fn main() -> Result<()> {
     // Start the database container (e.g. Postgres, MySQL, etc.) and launch
     // the application under test. Returns a handle containing the process,
     // database connection pool, and captured output buffers.
-    let app_handle = start_db_and_app(setup)
+    let app_handle = start_db_and_app(setup, cli.stream_app)
         .await
         .map_err(TestQuestError::StartUpError)?;
 
