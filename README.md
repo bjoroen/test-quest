@@ -29,7 +29,6 @@ migration_dir = "./utils/test_app/migrations"
 name = "auth"
 
 [test_groups.before_group]
-reset = true
 run_sql = ["""INSERT INTO users (id, name, password) VALUES
     (1, 'Alice', '123'),
     (2, 'Harry Potter', '1234'),
@@ -61,9 +60,9 @@ assert_status = 200
 assert_json = { id = 1, name = "Alice", password = "23" }
 
 [[test_groups.tests]]
-before_run = [
+before_run ={ run_sql = [
   "INSERT INTO users (id, name, password) VALUES (1, 'Alice', '123') ON CONFLICT (id) DO NOTHING;",
-]
+] }
 name = "GetUser"
 method = "GET"
 url = "/users/1"
@@ -77,12 +76,13 @@ assert_status = 200
 
  - [X] __CLI__
 
-    - [X] Nice looking error messages with [Miette Error](https://github.com/zkat/miette)
-    - [ ] Options for filtering tests, updating snapshots, verbose output
-
  - [X] __Database support__
 
  - [X] __Server lifecycle__
+
+ - [ ] __DSL__
+
+    - Rich domain specific language for expressive, composable tests
 
  - [ ] __Snapshots__
 
