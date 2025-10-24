@@ -82,8 +82,6 @@ pub async fn from_command(
                 source: OutputSource::StdOut,
                 line,
             });
-            // TODO: Add logic here to print the line if a debug/capture
-            // flag is set.
         }
     });
 
@@ -98,8 +96,6 @@ pub async fn from_command(
                 source: OutputSource::StdErr,
                 line,
             });
-            // TODO: Add logic here to print the line if a debug/capture
-            // flag is set.
         }
     });
 
