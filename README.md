@@ -100,8 +100,3 @@ assert_status = 200
     - Generate request bodies using strategies (string, int, regex, uuid, etc.)
     - Run multiple randomized inputs against the API
     - Assert invariants hold for all runs
-
- - [ ] __Fuzzing__
-
-    - Send malformed or random inputs
-    - Check that server fails gracefully without panics
