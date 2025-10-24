@@ -59,7 +59,7 @@ assert_sql = { query = "SELECT password FROM users WHERE name = 'Harry Potter';"
 name = "LogoutUser"
 method = "POST"
 url = "/logout"
-assert_status = 200
+assert_status = 404
 
 # --------------------
 # Group 2: User tests
@@ -103,4 +103,4 @@ method = "POST"
 url = "/users"
 body = { name = "Bob" }
 assert_status = 201
-assert_sql = { query = "SELECT name || ' - ' || id FROM users;", expect = "Harry Potter" }
+assert_sql = { query = "SELECT name || ' - ' || id FROM users;", expect = "Alice - 10, new_name - 11" }

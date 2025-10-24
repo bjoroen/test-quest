@@ -169,7 +169,7 @@ async fn run_sql(pool: &AnyPool, sql_statements: &Vec<String>) -> Result<(), Run
 }
 
 pub async fn reset_database(pool: &AnyPool) -> Result<(), sqlx::Error> {
-    let mut conn = pool.acquire().await?;
+    let _conn = pool.acquire().await?;
 
     Ok(())
 }
