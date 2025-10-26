@@ -10,7 +10,7 @@ use testcontainers::runners::AsyncRunner;
 use thiserror::Error;
 
 use crate::parser::ImageRef;
-use crate::setup::database::db::AnyDbPool;
+use crate::setup::database::any_db::AnyDbPool;
 
 const POSTGRES: &str = "postgres";
 const MYSQL: &str = "mysql";
@@ -18,7 +18,7 @@ const MARIADB: &str = "mariadb";
 
 const POSTGRES_DEFAULT_TAG: &str = "16-alpine";
 
-pub mod db;
+pub mod any_db;
 
 #[derive(Error, Debug)]
 pub enum DbError {
@@ -44,8 +44,8 @@ pub enum DbError {
 /// Represents a running test container for a specific database type.
 pub enum DatabaseContainer {
     Postgres(ContainerAsync<testcontainers_modules::postgres::Postgres>),
-    Mysql(ContainerAsync<testcontainers::GenericImage>),
-    Mariadb(ContainerAsync<testcontainers::GenericImage>),
+    Mysql(ContainerAsync<testcontainers_modules::mysql::Mysql>),
+    MariaDb(ContainerAsync<testcontainers_modules::mariadb::Mariadb>),
 }
 
 /// Holds a running database container and its connection URL.
@@ -69,6 +69,7 @@ struct DbLogger;
 /// * `db_type` - The type of database to start (`"postgres"`, `"mysql"`,
 ///   `"mariadb"`).
 /// * `db_port` - Optional port to bind the database to on localhost.
+/// * `image_ref` - Optional image to create the database from.
 ///
 /// # Returns
 ///
@@ -109,14 +110,21 @@ pub async fn from_type(
         }
         MYSQL => {
             let container = image_ref.map_or_else(
-                || GenericImage::new("mysql", "oraclelinux9"),
-                |image_ref| GenericImage::new(image_ref.name, image_ref.tag),
+                || {
+                    testcontainers_modules::mysql::Mysql::default()
+                        .with_name("mysql")
+                        .with_tag("oraclelinux9")
+                },
+                |image_ref| {
+                    testcontainers_modules::mysql::Mysql::default()
+                        .with_name(image_ref.name)
+                        .with_tag(image_ref.tag)
+                },
             );
 
             DatabaseContainer::Mysql(
                 container
                     .with_mapped_port(db_port.unwrap_or(3306), ContainerPort::Tcp(3306))
-                    .with_network("bridge")
                     .start()
                     .await
                     .map_err(DbError::TestContainer)?,
@@ -124,14 +132,21 @@ pub async fn from_type(
         }
         MARIADB => {
             let container = image_ref.map_or_else(
-                || GenericImage::new("mmariadb", "lts-ubi9"),
-                |image_ref| GenericImage::new(image_ref.name, image_ref.tag),
+                || {
+                    testcontainers_modules::mariadb::Mariadb::default()
+                        .with_name("mmariadb")
+                        .with_tag("lts-ubi9")
+                },
+                |image_ref| {
+                    testcontainers_modules::mariadb::Mariadb::default()
+                        .with_name(image_ref.name)
+                        .with_tag(image_ref.tag)
+                },
             );
 
-            DatabaseContainer::Mariadb(
+            DatabaseContainer::MariaDb(
                 container
                     .with_mapped_port(db_port.unwrap_or(3306), ContainerPort::Tcp(3306))
-                    .with_network("bridge")
                     .start()
                     .await
                     .map_err(DbError::TestContainer)?,
@@ -151,7 +166,7 @@ pub async fn from_type(
             c.get_host_port_ipv4(db_port.unwrap_or(3306)).await?,
             c.get_host().await?,
         ),
-        DatabaseContainer::Mariadb(c) => (
+        DatabaseContainer::MariaDb(c) => (
             c.get_host_port_ipv4(db_port.unwrap_or(3306)).await?,
             c.get_host().await?,
         ),
@@ -163,10 +178,10 @@ pub async fn from_type(
             host, host_port
         ),
         DatabaseContainer::Mysql(_) => {
-            format!("mysql://root:password@{}:{}", host, host_port)
+            format!("mysql://root@{}:{}/test", host, host_port)
         }
-        DatabaseContainer::Mariadb(_) => {
-            format!("mysql://root:password@{}:{}", host, host_port)
+        DatabaseContainer::MariaDb(_) => {
+            format!("mysql://root@{}:{}/test", host, host_port)
         }
     };
 

@@ -7,7 +7,7 @@ use crate::setup::app::AppError;
 use crate::setup::app::AppProcess;
 use crate::setup::database::DatabaseContainer;
 use crate::setup::database::DbError;
-use crate::setup::database::db::AnyDbPool;
+use crate::setup::database::any_db::AnyDbPool;
 use crate::validator::EnvSetup;
 
 pub mod app;

@@ -11,7 +11,7 @@ use reqwest::header::HeaderMap;
 use thiserror::Error;
 use url::Url;
 
-use crate::setup::database::db::AnyDbPool;
+use crate::setup::database::any_db::AnyDbPool;
 use crate::validator::Assertion;
 use crate::validator::IR;
 
@@ -125,40 +125,9 @@ pub async fn run_tests(
 pub async fn run_sql_assertions(assertions: &mut [Assertion], pool: &AnyDbPool) {
     for ass in assertions.iter_mut() {
         if let Assertion::Sql { query, got, .. } = ass {
-            let got_str = match pool.raw_sql(query).await {
-                Ok(rows) => {
-                    let values: Vec<String> = rows
-                        .iter()
-                        .flat_map(|row| {
-                            (0..row.len()).map(move |col_idx| {
-                                if let Ok(s) = row.try_get_string(col_idx) {
-                                    s
-                                } else if let Ok(i) = row.try_get_i64(col_idx) {
-                                    i.to_string()
-                                } else if let Ok(f) = row.try_get_f64(col_idx) {
-                                    f.to_string()
-                                } else if let Ok(b) = row.try_get_bool(col_idx) {
-                                    b.to_string()
-                                } else if row
-                                    .try_get_optional_string(col_idx)
-                                    .ok()
-                                    .flatten()
-                                    .is_none()
-                                {
-                                    "null".to_string()
-                                } else {
-                                    "<unsupported type>".to_string()
-                                }
-                            })
-                        })
-                        .collect();
+            let got_str = pool.raw_sql(query).await.unwrap();
 
-                    values.join(", ")
-                }
-                Err(e) => format!("SQL error: {e}"),
-            };
-
-            *got = Some(got_str);
+            *got = Some("some string".into());
         }
     }
 }

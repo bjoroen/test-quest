@@ -22,7 +22,7 @@ use crate::setup::StartUpError;
 use crate::setup::app::AppProcess;
 use crate::setup::app::OutputLine;
 use crate::setup::app::OutputSource;
-use crate::setup::database::db::AnyDbPool;
+use crate::setup::database::any_db::AnyDbPool;
 use crate::setup::start_db_and_app;
 use crate::validator::EnvSetup;
 use crate::validator::IR;
