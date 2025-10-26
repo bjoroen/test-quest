@@ -1,17 +1,17 @@
 #![allow(clippy::enum_variant_names)]
 
+use std::sync::Arc;
+
 use flume::SendError;
 use flume::Sender;
 use reqwest::Client;
 use reqwest::Response;
 use reqwest::StatusCode;
 use reqwest::header::HeaderMap;
-use sqlx::AnyPool;
-use sqlx::Pool;
-use sqlx::Row;
 use thiserror::Error;
 use url::Url;
 
+use crate::setup::database::any_db::AnyDbPool;
 use crate::validator::Assertion;
 use crate::validator::IR;
 
@@ -39,14 +39,13 @@ pub struct RunnerResult {
 pub async fn run_tests(
     ir: IR,
     tx: Sender<RunnerResult>,
-    pool: Pool<sqlx::Any>,
+    pool: Arc<AnyDbPool>,
 ) -> Result<(), RunnerError> {
     let client = Client::new();
 
     for test_group in ir.tests {
         let tx = tx.clone();
         let client = client.clone();
-        let pool = pool.clone();
 
         // If the test group has put database reset to true, we reset the database
         // before the tests run
@@ -123,44 +122,20 @@ pub async fn run_tests(
 
 /// Executes all SQL assertions in-place, handling multiple rows and types.
 /// Fills the `got` field for each `Assertion::Sql`.
-pub async fn run_sql_assertions(assertions: &mut [Assertion], pool: &AnyPool) {
+pub async fn run_sql_assertions(assertions: &mut [Assertion], pool: &AnyDbPool) {
     for ass in assertions.iter_mut() {
         if let Assertion::Sql { query, got, .. } = ass {
-            let got_str = match sqlx::query(query).fetch_all(pool).await {
-                Ok(rows) => {
-                    let values: Vec<String> = rows
-                        .iter()
-                        .map(|row| {
-                            if let Ok(s) = row.try_get::<String, _>(0) {
-                                s
-                            } else if let Ok(i) = row.try_get::<i64, _>(0) {
-                                i.to_string()
-                            } else if let Ok(f) = row.try_get::<f64, _>(0) {
-                                f.to_string()
-                            } else if let Ok(b) = row.try_get::<bool, _>(0) {
-                                b.to_string()
-                            } else if row.try_get::<Option<String>, _>(0).ok().flatten().is_none() {
-                                "null".to_string()
-                            } else {
-                                "<unsupported type>".to_string()
-                            }
-                        })
-                        .collect();
+            let rows = pool.raw_sql(query).await.unwrap();
 
-                    values.join(", ")
-                }
-                Err(e) => format!("SQL error: {e}"),
-            };
-
-            *got = Some(got_str);
+            let vec_of_colums: Vec<String> = rows.iter().map(|row| row.to_csv_line()).collect();
+            *got = Some(vec_of_colums);
         }
     }
 }
 
-async fn run_sql(pool: &AnyPool, sql_statements: &Vec<String>) -> Result<(), RunnerError> {
+async fn run_sql(pool: &AnyDbPool, sql_statements: &Vec<String>) -> Result<(), RunnerError> {
     for sql in sql_statements {
-        sqlx::raw_sql(sql.as_str())
-            .execute(pool)
+        pool.raw_sql(sql)
             .await
             .map_err(RunnerError::DatabaseError)?;
     }
@@ -168,9 +143,7 @@ async fn run_sql(pool: &AnyPool, sql_statements: &Vec<String>) -> Result<(), Run
     Ok(())
 }
 
-pub async fn reset_database(pool: &AnyPool) -> Result<(), sqlx::Error> {
-    let _conn = pool.acquire().await?;
-
+pub async fn reset_database(_pool: &AnyDbPool) -> Result<(), sqlx::Error> {
     Ok(())
 }
 
@@ -178,7 +151,7 @@ pub async fn reset_database(pool: &AnyPool) -> Result<(), sqlx::Error> {
 pub struct CapturedResponse {
     pub status: StatusCode,
     pub headers: HeaderMap,
-    pub body_text: String,
+    pub body_text: Option<String>,
     pub body_json: Option<serde_json::Value>,
 }
 
@@ -199,7 +172,7 @@ impl CapturedResponse {
         Self {
             status,
             headers,
-            body_text,
+            body_text: Some(body_text),
             body_json,
         }
     }

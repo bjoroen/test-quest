@@ -9,8 +9,12 @@ pub struct Cli {
     pub path: String,
 
     /// App stdout and stderr at the end
-    #[arg(short = 'o', long)]
+    #[arg(short = 'a', long)]
     pub app_output: bool,
+
+    /// DB stdout and stderr at the end
+    #[arg(short = 'd', long)]
+    pub db_output: bool,
 
     /// If this is sat by running --stream-app, the output from the application
     /// while be printed as it comes

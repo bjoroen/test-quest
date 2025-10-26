@@ -7,12 +7,13 @@ use flume::Sender;
 use reqwest::StatusCode;
 use reqwest::header::HeaderMap;
 
+use crate::parser::StringOrStrings;
 use crate::runner::RunnerResult;
 use crate::validator::Assertion;
 
 pub struct Asserter {}
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub enum TestResult {
     Pass,
     Fail,
@@ -29,7 +30,7 @@ pub struct AssertResult {
 pub enum Actual {
     Header(HeaderMap),
     Status(reqwest::StatusCode),
-    Sql(String),
+    Sql(Vec<String>),
     Json(serde_json::Value),
     RequestFailed(String),
 }
@@ -83,18 +84,55 @@ impl Display for AssertResult {
                 )?;
                 writeln!(f, "  {}", console::style("SQL query:").yellow().bold())?;
                 writeln!(f, "    {}", console::style(query).dim())?;
-                writeln!(
-                    f,
-                    "  {} {}",
-                    console::style("Expected:").green(),
-                    console::style(expect).green().bold()
-                )?;
-                writeln!(
-                    f,
-                    "  {} {}",
-                    console::style("Got:").red(),
-                    console::style(got).red().bold()
-                )
+                writeln!(f, "  {}", console::style("Expected rows:").green().bold())?;
+                match expect {
+                    StringOrStrings::Single(s) => {
+                        writeln!(
+                            f,
+                            "    {}",
+                            console::style(format!("{:>2}: {}", 1, s)).green()
+                        )?;
+                    }
+                    StringOrStrings::Multiple(items) => {
+                        for (i, row) in items.iter().enumerate() {
+                            writeln!(
+                                f,
+                                "    {}",
+                                console::style(format!("{:>2}: {}", i + 1, row)).green()
+                            )?;
+                        }
+                    }
+                }
+
+                match got.len() {
+                    0 => {
+                        writeln!(
+                            f,
+                            "  {} {}",
+                            console::style("Got:").red(),
+                            console::style("<no rows returned>").red().bold()
+                        )
+                    }
+                    // 1 => {
+                    //     writeln!(
+                    //         f,
+                    //         "  {} {}",
+                    //         console::style("Got row:").red(),
+                    //         console::style(&got[0]).red().bold()
+                    //     )
+                    // }
+                    _ => {
+                        writeln!(f, "  {}", console::style("Got rows:").red().bold())?;
+                        for (i, row) in got.iter().enumerate() {
+                            writeln!(
+                                f,
+                                "    {}",
+                                console::style(format!("{:>2}: {}", i + 1, row)).red()
+                            )?;
+                        }
+                        Ok(())
+                    }
+                }
             }
 
             (TestResult::Fail, Assertion::Json(expected_json), Actual::Json(actual_json)) => {
@@ -184,7 +222,13 @@ impl Display for Actual {
                 write!(f, "Got headers {{{}}}", headers.join(", "))
             }
             Actual::Status(status_code) => write!(f, "Got status {}", status_code),
-            Actual::Sql(s) => write!(f, "Got response from database: {s}"),
+            Actual::Sql(sqls) => {
+                if sqls.len() == 1 {
+                    write!(f, "Got response from database: {}", sqls[0])
+                } else {
+                    write!(f, "Got responses from database: [{}]", sqls.join(", "))
+                }
+            }
             Actual::Json(value) => write!(f, "Got json: {value}"),
             Actual::RequestFailed(_) => write!(f, "Request failed"),
         }
@@ -241,7 +285,7 @@ impl Assert for RunnerResult {
                                 if let Some(g) = got {
                                     Actual::Sql(g.clone())
                                 } else {
-                                    Actual::Sql("".into())
+                                    Actual::Sql(vec![])
                                 }
                             }
                             Assertion::Json(_) => {
@@ -291,13 +335,41 @@ fn assert_json(expected: &serde_json::Value, got: Option<&serde_json::Value>) ->
     }
 }
 
-fn assert_sql(expect: &str, got: Option<&String>) -> TestResult {
-    let Some(got) = got else {
-        return TestResult::Fail;
-    };
+fn assert_sql(expect: &StringOrStrings, got: Option<&Vec<String>>) -> TestResult {
+    match expect {
+        StringOrStrings::Single(expected) => {
+            let Some(got) = got else {
+                return TestResult::Fail;
+            };
 
-    if got != expect {
-        return TestResult::Fail;
+            if expected.is_empty() && got.is_empty() {
+                return TestResult::Pass;
+            }
+
+            if got.len() != 1 {
+                return TestResult::Fail;
+            }
+
+            if got[0] != *expected {
+                return TestResult::Fail;
+            }
+        }
+
+        StringOrStrings::Multiple(expected_items) => {
+            let Some(got) = got else {
+                return TestResult::Fail;
+            };
+
+            if got.len() != expected_items.len() {
+                return TestResult::Fail;
+            }
+
+            for (expected, actual) in expected_items.iter().zip(got.iter()) {
+                if expected != actual {
+                    return TestResult::Fail;
+                }
+            }
+        }
     }
 
     TestResult::Pass
@@ -327,4 +399,98 @@ fn assert_status(s: &i32, status: reqwest::StatusCode) -> TestResult {
     }
 
     TestResult::Pass
+}
+
+#[cfg(test)]
+mod test {
+    use std::sync::Arc;
+
+    use reqwest::StatusCode;
+    use reqwest::header::HOST;
+    use reqwest::header::HeaderMap;
+    use reqwest::header::LOCATION;
+    use url::Url;
+
+    use crate::asserter::AssertResult;
+    use crate::asserter::Asserter;
+    use crate::asserter::TestResult;
+    use crate::runner::CapturedResponse;
+    use crate::runner::RunnerResult;
+    use crate::validator::Assertion;
+
+    #[test]
+    fn assert_status_test() {
+        // TODO: Write tests
+    }
+    #[test]
+    fn assert_headers() {
+        // TODO: Write tests
+    }
+    #[test]
+    fn assert_json() {
+        // TODO: Write tests
+    }
+
+    #[test]
+    fn assert_db_state() {
+        // TODO: Write tests
+    }
+
+    #[tokio::test]
+    async fn test_full() {
+        let (runner_tx, asserter_rx) = flume::unbounded::<RunnerResult>();
+        let (asserter_tx, outputter_rx) =
+            flume::unbounded::<(String, String, String, Arc<[AssertResult]>)>();
+
+        tokio::spawn(async move {
+            Asserter::run(asserter_rx, asserter_tx).await.unwrap();
+        });
+
+        let mut header_map = HeaderMap::new();
+
+        header_map.insert(HOST, "world".parse().unwrap());
+        header_map.insert(LOCATION, "this-is-a-location".parse().unwrap());
+
+        let json_data = r#"
+        {
+            "name": "John Doe",
+            "age": 43,
+            "phones": [
+                "+44 1234567",
+                "+44 2345678"
+            ]
+        }"#;
+
+        runner_tx
+            .send_async(RunnerResult {
+                name: "this-is-a-name".into(),
+                method: "GET".into(),
+                url: Url::parse("http://test.com/some-path").unwrap(),
+                response: Some(CapturedResponse {
+                    status: StatusCode::OK,
+                    headers: header_map.clone(),
+                    body_text: None,
+                    body_json: Some(serde_json::from_str(json_data).unwrap()),
+                }),
+                error: None,
+                assertions: vec![
+                    Assertion::Status(200),
+                    Assertion::Headers(header_map),
+                    Assertion::Json(serde_json::from_str(json_data).unwrap()),
+                ],
+            })
+            .await
+            .unwrap();
+
+        let Ok((name, path, method, result)) = outputter_rx.recv_async().await else {
+            todo!()
+        };
+        assert_eq!(name, "this-is-a-name");
+        assert_eq!(path, "/some-path");
+        assert_eq!(method, "GET");
+
+        for res in result.iter() {
+            assert_eq!(res.status, TestResult::Pass);
+        }
+    }
 }

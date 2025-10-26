@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::fmt;
 
 use serde::Deserialize;
 
@@ -56,9 +57,16 @@ pub struct TestGroup {
 }
 
 #[derive(Debug, Deserialize, Clone)]
+#[serde(untagged)]
+pub enum StringOrStrings {
+    Single(String),
+    Multiple(Vec<String>),
+}
+
+#[derive(Debug, Deserialize, Clone)]
 pub struct AssertSql {
     pub query: String,
-    pub expect: String,
+    pub expect: StringOrStrings,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -72,6 +80,23 @@ pub struct Test {
     pub body: Option<serde_json::Value>,
     pub assert_status: Option<i32>,
     pub assert_headers: Option<toml::Value>,
-    pub assert_sql: Option<AssertSql>,
+    pub assert_db_state: Option<AssertSql>,
     pub assert_json: Option<serde_json::Value>,
+}
+
+impl fmt::Display for StringOrStrings {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            StringOrStrings::Single(s) => write!(f, "{s}"),
+            StringOrStrings::Multiple(v) => {
+                if v.is_empty() {
+                    write!(f, "[]")
+                } else if v.len() == 1 {
+                    write!(f, "[{}]", v[0])
+                } else {
+                    write!(f, "[{}]", v.join(", "))
+                }
+            }
+        }
+    }
 }

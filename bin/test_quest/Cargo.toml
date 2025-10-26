@@ -28,4 +28,10 @@ sqlx = { version = "0.8", features = [
   "sqlite",
   "runtime-tokio-native-tls",
   "macros",
+  "chrono",
+  "rust_decimal",
+  "uuid",
 ] }
+chrono = "0.4.42"
+uuid = { version = "1.18.1", features = ["v4"] }
+rust_decimal = "1.39.0"
