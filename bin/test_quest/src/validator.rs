@@ -15,6 +15,7 @@ use crate::parser;
 use crate::parser::Global;
 use crate::parser::Hook;
 use crate::parser::ImageRef;
+use crate::parser::StringOrStrings;
 use crate::parser::TestQuest;
 
 // Error messages for parsing URLs
@@ -35,8 +36,8 @@ pub enum Assertion {
     Headers(HeaderMap),
     Sql {
         query: String,
-        expect: String,
-        got: Option<String>,
+        expect: StringOrStrings,
+        got: Option<Vec<String>>,
     },
     Json(serde_json::Value),
     RequestFailed,
@@ -235,7 +236,7 @@ impl Validator {
         let assertions = parser_assertion::parse_assertions(
             &test.assert_status,
             &test.assert_headers,
-            &test.assert_sql,
+            &test.assert_db_state,
             &test.assert_json,
             Some((file_name, toml_src)),
         )?;

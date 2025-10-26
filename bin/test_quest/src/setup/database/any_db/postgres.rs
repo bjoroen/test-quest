@@ -17,7 +17,7 @@ impl From<sqlx::postgres::PgRow> for AnyRow {
 
         for col in row.columns() {
             let name = col.name();
-            let typ = col.type_info().to_string().to_lowercase();
+            let typ = col.type_info().to_string();
 
             let value = match typ.as_str() {
                 "INT2" => row
@@ -101,7 +101,7 @@ mod test {
     use crate::setup::database::any_db::DbValue;
 
     #[tokio::test]
-    async fn basic_test() {
+    async fn postgres_type_test() {
         let database = database::from_type("postgres".into(), None, None)
             .await
             .unwrap();
@@ -119,10 +119,11 @@ mod test {
 
         assert_eq!(any_pool_all.len(), 1);
         assert!(
-            any_pool_all
+            any_pool_all.iter().all(|v| v
+                .values
                 .iter()
-                .all(|v| v.values.iter().all(|v| !matches!(v, DbValue::Null))),
-            "Vec contains a Null value!"
+                .all(|v| !matches!(v, DbValue::Null) && !matches!(v, DbValue::Unsupported))),
+            "Vec contains a Null or Unsupported value!"
         );
     }
 

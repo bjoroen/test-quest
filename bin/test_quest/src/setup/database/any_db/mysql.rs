@@ -102,7 +102,7 @@ mod test {
     use crate::setup::database::{self};
 
     #[tokio::test]
-    async fn basic_test_mysql() {
+    async fn mysql_type_test() {
         let database = database::from_type("mysql".into(), None, None)
             .await
             .unwrap();
@@ -122,10 +122,11 @@ mod test {
 
         assert_eq!(any_pool_all.len(), 1);
         assert!(
-            any_pool_all
+            any_pool_all.iter().all(|v| v
+                .values
                 .iter()
-                .all(|row| row.values.iter().all(|v| !matches!(v, DbValue::Null))),
-            "Vec contains a Null value!"
+                .all(|v| !matches!(v, DbValue::Null) && !matches!(v, DbValue::Unsupported))),
+            "Vec contains a Null or Unsupported value!"
         );
     }
 

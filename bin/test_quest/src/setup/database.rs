@@ -101,6 +101,7 @@ pub async fn from_type(
 
             DatabaseContainer::Postgres(
                 container
+                    .with_mapped_port(5432, ContainerPort::Tcp(5432))
                     .with_env_var("POSTGRES_LOGGING_COLLECTOR", "on")
                     .with_env_var("POSTGRES_LOG_STATEMENT", "all")
                     .start()

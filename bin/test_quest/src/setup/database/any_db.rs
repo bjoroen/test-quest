@@ -1,3 +1,4 @@
+use std::fmt::Display;
 use std::path::Path;
 
 use chrono::DateTime;
@@ -29,9 +30,38 @@ pub enum DbValue {
     Unsupported,
 }
 
+impl Display for DbValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DbValue::I64(v) => write!(f, "{}", v),
+            DbValue::F64(v) => write!(f, "{}", v),
+            DbValue::Bool(v) => write!(f, "{}", v),
+            DbValue::String(v) => write!(f, "{}", v),
+            DbValue::Bytes(v) => write!(f, "{:?}", v),
+            DbValue::Decimal(v) => write!(f, "{}", v),
+            DbValue::Uuid(v) => write!(f, "{}", v),
+            DbValue::Json(v) => write!(f, "{}", v),
+            DbValue::Date(v) => write!(f, "{}", v),
+            DbValue::DateTime(v) => write!(f, "{}", v),
+            DbValue::Timestamp(v) => write!(f, "{}", v),
+            DbValue::Null => write!(f, "NULL"),
+            DbValue::Unsupported => write!(f, "<unsupported>"),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct AnyRow {
     pub values: Vec<DbValue>,
+}
+impl AnyRow {
+    pub fn to_csv_line(&self) -> String {
+        self.values
+            .iter()
+            .map(|v| v.to_string())
+            .collect::<Vec<_>>()
+            .join(",")
+    }
 }
 
 pub enum AnyDbPool {

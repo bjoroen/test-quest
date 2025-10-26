@@ -125,9 +125,10 @@ pub async fn run_tests(
 pub async fn run_sql_assertions(assertions: &mut [Assertion], pool: &AnyDbPool) {
     for ass in assertions.iter_mut() {
         if let Assertion::Sql { query, got, .. } = ass {
-            let got_str = pool.raw_sql(query).await.unwrap();
+            let rows = pool.raw_sql(query).await.unwrap();
 
-            *got = Some("some string".into());
+            let vec_of_colums: Vec<String> = rows.iter().map(|row| row.to_csv_line()).collect();
+            *got = Some(vec_of_colums);
         }
     }
 }
@@ -150,7 +151,7 @@ pub async fn reset_database(_pool: &AnyDbPool) -> Result<(), sqlx::Error> {
 pub struct CapturedResponse {
     pub status: StatusCode,
     pub headers: HeaderMap,
-    pub body_text: String,
+    pub body_text: Option<String>,
     pub body_json: Option<serde_json::Value>,
 }
 
@@ -171,7 +172,7 @@ impl CapturedResponse {
         Self {
             status,
             headers,
-            body_text,
+            body_text: Some(body_text),
             body_json,
         }
     }

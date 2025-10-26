@@ -34,12 +34,11 @@ url = "/login"
 query = "?hello=world&world=hello"
 headers = { Authorization = "api-key 234-1234-1234-1234" }
 body = { username = "Harry Potter", password = "1234" }
-assert_status = 200
 assert_headers = { Content-Type = "application/json" }
 
 [[test_groups.tests]]
 before_run = { run_sql = [
-  "INSERT INTO users (id, name, password) VALUES (6, 'Harry Plotter', '123') ON CONFLICT (id) DO NOTHING;",
+  "INSERT INTO users (id, name, password) VALUES (6, 'Harry Potter', '123') ON CONFLICT (id) DO NOTHING;",
 ] }
 name = "ChangeUserPasswordFail"
 method = "PATCH"
@@ -47,7 +46,10 @@ url = "/login/password/change"
 body = { username = "Harry Potter", password = "123123" }
 assert_status = 200
 assert_headers = { Content-Length = "0" }
-assert_sql = { query = "SELECT * FROM users WHERE name = 'Harry Potter';", expect = "1223" }
+assert_db_state = { query = "SELECT * FROM users WHERE name = 'Harry Potter' ORDER BY ID ASC;", expect = [
+  "2,Harry Potter,123123",
+  "6,Harry Potter,123123",
+] }
 
 [[test_groups.tests]]
 name = "LogoutUser"
@@ -73,8 +75,15 @@ ON CONFLICT (id) DO NOTHING;"""]
 name = "DeleteUser"
 method = "DELETE"
 url = "/users/1"
-assert_status = 200
-assert_json = { id = 1, name = "Alice", password = "23" }
+assert_db_state = { query = "SELECT * FROM users where id = 6", expect = "6,Harry Potter,123123" }
+
+[[test_groups.tests]]
+name = "DeleteUser"
+method = "DELETE"
+url = "/users/1"
+assert_db_state = { query = "SELECT convert_to(name, 'UTF8') AS text_bytes FROM users WHERE id = 2;", expect = [
+  "[72, 97, 114, 114, 121, 32, 80, 111, 116, 116, 101, 114]",
+] }
 
 [[test_groups.tests]]
 before_run = { reset_db = true, run_sql = [
@@ -97,4 +106,7 @@ method = "POST"
 url = "/users"
 body = { name = "Bob" }
 assert_status = 201
-assert_sql = { query = "SELECT name || ' - ' || id FROM users;", expect = "Alice - 10, new_name - 11" }
+assert_db_state = { query = "SELECT name || ' - ' || id FROM users;", expect = [
+  "Alice - 10",
+  "new_name - 11",
+] }
