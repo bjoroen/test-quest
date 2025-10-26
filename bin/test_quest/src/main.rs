@@ -22,6 +22,7 @@ use crate::setup::StartUpError;
 use crate::setup::app::AppProcess;
 use crate::setup::app::OutputLine;
 use crate::setup::app::OutputSource;
+use crate::setup::database::db::AnyDbPool;
 use crate::setup::start_db_and_app;
 use crate::validator::EnvSetup;
 use crate::validator::IR;
@@ -114,7 +115,7 @@ async fn load_and_validate_config() -> Result<(Cli, IR, usize, EnvSetup), TestQu
 async fn run_pipeline_tasks(
     test_groups: IR,
     n_tests: usize,
-    pool: &sqlx::Pool<sqlx::Any>,
+    pool: Arc<AnyDbPool>,
     path: &str,
 ) -> (
     JoinHandle<Result<(), RunnerError>>,
@@ -134,10 +135,8 @@ async fn run_pipeline_tasks(
     });
 
     // TestRunner Task
-    let pool = pool.clone();
 
-    let runner_jh =
-        tokio::spawn(async move { run_tests(test_groups, runner_tx, pool.clone()).await });
+    let runner_jh = tokio::spawn(async move { run_tests(test_groups, runner_tx, pool).await });
 
     // Asserter Task
     let asserter_outputter_tx = asserter_tx;
@@ -199,7 +198,7 @@ async fn main() -> Result<()> {
     // - The asserter, which verifies the results.
     // - The outputter, which collects and displays final output.
     let (runner_jh, asserter_jh, outputter_handle) =
-        run_pipeline_tasks(test_groups, n_tests, &app_handle.pool.clone(), &cli.path).await;
+        run_pipeline_tasks(test_groups, n_tests, app_handle.pool, &cli.path).await;
 
     // Wait for all background tasks to complete and gracefully shut down
     // the database container and application process.
@@ -209,6 +208,10 @@ async fn main() -> Result<()> {
     // output from the application after all tests have finished running.
     if cli.app_output {
         print_app_output(&app_handle.child.output).await;
+    }
+
+    if cli.db_output {
+        // Need to setup stream-db for streaming database logs
     }
 
     Ok(())

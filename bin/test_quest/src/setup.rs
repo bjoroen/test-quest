@@ -1,11 +1,13 @@
+use std::sync::Arc;
+
 use database::Database;
-use sqlx::Pool;
 use thiserror::Error;
 
 use crate::setup::app::AppError;
 use crate::setup::app::AppProcess;
 use crate::setup::database::DatabaseContainer;
 use crate::setup::database::DbError;
+use crate::setup::database::db::AnyDbPool;
 use crate::validator::EnvSetup;
 
 pub mod app;
@@ -14,7 +16,7 @@ pub mod database;
 pub struct AppHandle {
     pub child: AppProcess,
     pub database_container: DatabaseContainer,
-    pub pool: Pool<sqlx::Any>,
+    pub pool: Arc<AnyDbPool>,
 }
 
 #[derive(Debug, Error)]
@@ -33,6 +35,8 @@ pub async fn start_db_and_app(
     env_setup: EnvSetup,
     stream_app: bool,
 ) -> Result<AppHandle, StartUpError> {
+    // Get all values needed from the
+    // `env_setup`
     let EnvSetup {
         base_url,
         command,

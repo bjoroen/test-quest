@@ -7,8 +7,8 @@ env = { SOME_ENV = "some_env_value" }
 
 [db]
 db_type = "postgres"
-migration_dir = "./utils/test_app/migrations"
 image_ref = { name = "postgis/postgis", tag = "15-3.5-alpine" }
+migration_dir = "./utils/test_app/migrations"
 
 [global]
 headers = { Authorization = "api-key 1234-1234-1234-1234" }
@@ -38,22 +38,16 @@ assert_status = 200
 assert_headers = { Content-Type = "application/json" }
 
 [[test_groups.tests]]
-name = "ChangeUserPassword"
-method = "PATCH"
-url = "/login/password/change"
-body = { username = "Harry Potter", password = "123123" }
-assert_status = 200
-assert_headers = { Content-Length = "1" }
-assert_sql = { query = "SELECT password FROM users WHERE name = 'Harry Potter';", expect = "123123" }
-
-[[test_groups.tests]]
+before_run = { run_sql = [
+  "INSERT INTO users (id, name, password) VALUES (6, 'Harry Plotter', '123') ON CONFLICT (id) DO NOTHING;",
+] }
 name = "ChangeUserPasswordFail"
 method = "PATCH"
 url = "/login/password/change"
 body = { username = "Harry Potter", password = "123123" }
 assert_status = 200
 assert_headers = { Content-Length = "0" }
-assert_sql = { query = "SELECT password FROM users WHERE name = 'Harry Potter';", expect = "1223" }
+assert_sql = { query = "SELECT * FROM users WHERE name = 'Harry Potter';", expect = "1223" }
 
 [[test_groups.tests]]
 name = "LogoutUser"
