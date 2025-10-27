@@ -10,6 +10,8 @@ pub struct TestQuest {
     pub before_each_group: Option<Hook>,
     pub test_groups: Vec<TestGroup>,
     pub global: Global,
+    #[serde(rename = "prop_tests")]
+    pub prop_tests: Option<Vec<RawPropTests>>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -55,6 +57,37 @@ pub struct TestGroup {
     pub before_group: Option<Hook>,
     pub tests: Vec<Test>,
 }
+
+// PROP TESTS
+#[derive(Deserialize, Debug, Clone)]
+#[serde(rename = "prop_tests")]
+pub struct RawPropTests {
+    pub name: String,
+    pub before_run: Option<Hook>,
+    pub props: HashMap<String, String>,
+    pub steps: Vec<Step>,
+    pub assert_props: Option<Vec<PropAssertion>>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct Step {
+    pub name: String,
+    pub method: String,
+    pub url: Option<String>,
+    #[serde(default)]
+    pub body: Option<serde_json::Value>,
+    pub expect_status: Option<u16>,
+    pub assert_props: Option<Vec<PropAssertion>>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct PropAssertion {
+    pub left: String,
+    pub op: String, // e.g., "==", "exists"
+    #[serde(default)]
+    pub right: Option<String>, // optional, e.g., for "exists" assertions
+}
+// PROP TESTS
 
 #[derive(Debug, Deserialize, Clone)]
 #[serde(untagged)]

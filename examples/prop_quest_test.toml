@@ -1,0 +1,75 @@
+[setup]
+base_url = "http://localhost:6969"
+command = "cargo"
+args = ["r", "-p", "test_app"]
+ready_when = "/health"
+env = { SOME_ENV = "some_env_value" }
+
+[db]
+db_type = "postgres"
+image_ref = { name = "postgis/postgis", tag = "15-3.5-alpine" }
+migration_dir = "./utils/test_app/migrations"
+
+[global]
+headers = { Authorization = "api-key 1234-1234-1234-1234" }
+
+[[test_groups]]
+name = "some name"
+
+[[test_groups.tests]]
+name = "some name"
+method = "GET"
+url = "/some-url"
+
+[[prop_tests]]
+name = "ChangeUserPassword"
+description = "Changing password should update the database correctly"
+# iterations = 50
+props = { password = "string(1,20)" }
+before_run = { run_sql = [
+  "INSERT INTO users (id, name, password) VALUES (6, 'Harry Potter', '123') ON CONFLICT (id) DO NOTHING;",
+] }
+
+[[prop_tests.steps]]
+name = "change_password"
+method = "PATCH"
+url = "/login/password/change"
+body = { username = "Harry Potter", password = "props.password" }
+expect_status = 200
+
+[[prop_tests.steps]]
+name = "verify_db"
+method = "N/A"
+assert_props = [
+  { left = "SELECT password FROM users WHERE id = {response.body.id};", op = "==", right = "steps.change_password.body.password" },
+]
+
+
+# --- Test 1: Create and fetch user ---
+# [[prop_tests]]
+# name = "CreateAndFetchUser"
+# description = "Property test: user fetched after creation should match fields"
+# # iterations = 100
+# before_run = { run_sql = ["DELETE FROM users;"] }
+# props = { name = "string(1,20)", age = "int(0,120)" }
+#
+# [[prop_tests.steps]]
+# name = "create_user"
+# method = "POST"
+# url = "/user"
+# body = { name = "{string(1, 20)}", age = "{u8(0, 120)}" }
+# expect_status = 201
+#
+# [[prop_tests.steps]]
+# name = "fetch_user"
+# method = "GET"
+# url = "/user/{steps.create_user.response.body.id}"
+# expect_status = 200
+#
+# assert_props = [
+#   { left = "steps.fetch_user.response.body.name", op = "==", right = "steps.create_user.body.name" },
+#   { left = "steps.fetch_user.response.body.age", op = "==", right = "steps.create_user.body.age" },
+#   { left = "steps.fetch_user.response.body.id", op = "exists" },
+# ]
+
+# --- Test 2: Change user password ---

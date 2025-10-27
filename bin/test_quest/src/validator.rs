@@ -10,6 +10,7 @@ use reqwest::header::HeaderMap;
 use thiserror::Error;
 
 mod parser_assertion;
+mod prop_tests;
 
 use crate::parser;
 use crate::parser::Global;
@@ -87,6 +88,8 @@ pub struct ValidatedTests {
     pub assertions: Vec<Assertion>,
 }
 
+pub struct PropTests {}
+
 #[derive(Debug, Error, Diagnostic)]
 #[error("Invalid field `{field}`: {message}")]
 pub struct ValidationError {
@@ -124,8 +127,17 @@ impl Validator {
     pub fn validate(&mut self) -> miette::Result<(IR, EnvSetup), ValidationError> {
         let tests = self.validate_tests()?;
         let setup = self.validate_setup()?;
+        let prop_tests = self.validate_prop_tests()?;
 
         Ok((tests, setup))
+    }
+
+    fn validate_prop_tests(&self) -> Result<PropTests, ValidationError> {
+        if let Some(prop_tests) = &self.test_quest.prop_tests {
+            Ok(prop_tests::parse_prop_tests(prop_tests).unwrap())
+        } else {
+            todo!()
+        }
     }
 
     fn validate_tests(&self) -> Result<IR, ValidationError> {
