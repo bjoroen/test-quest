@@ -1,19 +1,22 @@
-#![allow(clippy::enum_variant_names)]
-
 use std::sync::Arc;
 
 use flume::SendError;
 use flume::Sender;
-use reqwest::Client;
 use reqwest::Response;
 use reqwest::StatusCode;
 use reqwest::header::HeaderMap;
 use thiserror::Error;
-use url::Url;
 
+use crate::runner::test_runner::RunnerResult;
 use crate::setup::database::any_db::AnyDbPool;
 use crate::validator::Assertion;
+use crate::validator::BeforeEach;
 use crate::validator::IR;
+use crate::validator::TestGroups;
+use crate::validator::prop_tests::PropTests;
+
+pub mod prop_runner;
+pub mod test_runner;
 
 #[derive(Error, Debug)]
 // TODO: Fix large enum
@@ -26,97 +29,69 @@ pub enum RunnerError {
     DatabaseError(#[from] sqlx::Error),
 }
 
-#[derive(Debug)]
-pub struct RunnerResult {
-    pub name: String,
-    pub method: String,
-    pub url: Url,
-    pub response: Option<CapturedResponse>,
-    pub error: Option<String>,
-    pub assertions: Vec<Assertion>,
+pub struct Runner;
+
+impl Runner {
+    pub async fn run(
+        &self,
+        ir: IR,
+        tx: Sender<RunnerResult>,
+        pool: Arc<AnyDbPool>,
+    ) -> Result<(), RunnerError> {
+        let IR {
+            before_each_group: _,
+            tests,
+            prop_tests,
+        } = ir;
+
+        let tx_prop = tx.clone();
+        let pool_prop = pool.clone();
+        self.run_prop_tests(prop_tests, tx_prop, pool_prop).await?;
+
+        let tx_test = tx.clone();
+        let pool_test = pool.clone();
+        self.run_tests(tests, tx_test, pool_test).await
+    }
+
+    async fn run_tests(
+        &self,
+        tests: Vec<TestGroups>,
+        tx: Sender<RunnerResult>,
+        pool: Arc<AnyDbPool>,
+    ) -> Result<(), RunnerError> {
+        test_runner::run_tests(tests, tx, pool).await
+    }
+
+    async fn run_prop_tests(
+        &self,
+        prop_tests: Option<Vec<PropTests>>,
+        tx: Sender<RunnerResult>,
+        pool: Arc<AnyDbPool>,
+    ) -> Result<(), RunnerError> {
+        if let Some(prop_tests) = prop_tests {
+            prop_runner::run_prop_tests(prop_tests, tx, pool).await?
+        }
+
+        Ok(())
+    }
 }
 
-pub async fn run_tests(
-    ir: IR,
-    tx: Sender<RunnerResult>,
-    pool: Arc<AnyDbPool>,
+pub async fn handle_before(
+    pool: &AnyDbPool,
+    before: &Option<BeforeEach>,
 ) -> Result<(), RunnerError> {
-    let client = Client::new();
-
-    for test_group in ir.tests {
-        let tx = tx.clone();
-        let client = client.clone();
-
-        // If the test group has put database reset to true, we reset the database
-        // before the tests run
-        if let Some(before) = test_group.before_group {
-            if before.reset_db.is_some_and(|b| b) {
-                reset_database(&pool)
-                    .await
-                    .map_err(RunnerError::DatabaseError)?;
-            }
-
-            if let Some(sql_statements) = &before.sql {
-                run_sql(&pool, sql_statements).await?
-            }
+    if let Some(before) = before {
+        if before.reset_db.is_some_and(|b| b) {
+            reset_database(pool)
+                .await
+                .map_err(RunnerError::DatabaseError)?;
         }
 
-        for mut test in test_group.tests {
-            let client = client.clone();
-            let tx = tx.clone();
-            let url = test.url.clone();
-            let method = test.method.to_string().clone();
-
-            // TODO: Duplicated logic with the one above
-            if let Some(before) = test.before_run {
-                if before.reset_db.is_some_and(|b| b) {
-                    reset_database(&pool)
-                        .await
-                        .map_err(RunnerError::DatabaseError)?;
-                }
-
-                if let Some(sql_statements) = &before.sql {
-                    run_sql(&pool, sql_statements).await?
-                }
-            }
-
-            let result = if let Some(body) = test.body {
-                client
-                    .request(test.method, url)
-                    .headers(test.headers)
-                    .json(&body)
-            } else {
-                client.request(test.method, url).headers(test.headers)
-            }
-            .send()
-            .await;
-
-            run_sql_assertions(&mut test.assertions, &pool).await;
-
-            let runner_result = match result {
-                Ok(resp) => RunnerResult {
-                    name: test.name,
-                    method,
-                    url: test.url.clone(),
-                    response: Some(CapturedResponse::from_response(resp).await),
-                    error: None,
-                    assertions: test.assertions,
-                },
-                Err(err) => RunnerResult {
-                    name: test.name,
-                    method,
-                    url: test.url,
-                    response: None,
-                    error: Some(err.to_string()),
-                    assertions: test.assertions,
-                },
-            };
-
-            if let Err(error) = tx.send_async(runner_result).await {
-                todo!("{error}")
-            }
+        if let Some(sql_statements) = &before.sql {
+            run_sql(pool, sql_statements).await?;
         }
     }
+
     Ok(())
 }
 
@@ -160,13 +135,11 @@ impl CapturedResponse {
         let status = resp.status();
         let headers = resp.headers().clone();
 
-        // Consume the body exactly once
         let body_text = match resp.text().await {
             Ok(t) => t,
             Err(err) => format!("Failed to read body: {}", err),
         };
 
-        // Attempt to parse JSON, but don't panic
         let body_json = serde_json::from_str::<serde_json::Value>(&body_text).ok();
 
         Self {

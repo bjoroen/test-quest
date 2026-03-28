@@ -21,28 +21,44 @@ name = "some name"
 method = "GET"
 url = "/some-url"
 
+# ------------------
+# Setup
+# ------------------
 [[prop_tests]]
 name = "ChangeUserPassword"
 description = "Changing password should update the database correctly"
-# iterations = 50
-props = { password = "string(1,20)" }
+props = { password = "string(1,20)", int = "int(1,20)" }
 before_run = { run_sql = [
   "INSERT INTO users (id, name, password) VALUES (6, 'Harry Potter', '123') ON CONFLICT (id) DO NOTHING;",
 ] }
+# ------------------
+# Run in loopp
+# ------------------
+[[prop_tests.steps]]
+name = "create_user"
+method = "POST"
+url = "/user"
+body = { username = "props.username", password = "props.password" }
+assert_status = 200
+assert_header = { Content-Type = "Application/json" }
 
 [[prop_tests.steps]]
 name = "change_password"
 method = "PATCH"
-url = "/login/password/change"
-body = { username = "Harry Potter", password = "props.password" }
-expect_status = 200
+url = "/login/password/${create_user.response.id}/change"
+body = { password = "${props.password}" }
+assert_status = 200
 
 [[prop_tests.steps]]
 name = "verify_db"
-method = "N/A"
+# type = "db" ???
+# type = "http" ???
+url = "/db"
+method = "GET"
 assert_props = [
-  { left = "SELECT password FROM users WHERE id = {response.body.id};", op = "==", right = "steps.change_password.body.password" },
+  { left = "SELECT password FROM users WHERE id = ${change_password.response.body.id};", op = "==", right = "${props.password}" },
 ]
+# ------------------
 
 
 # --- Test 1: Create and fetch user ---

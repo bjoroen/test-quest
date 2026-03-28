@@ -8,7 +8,7 @@ use reqwest::StatusCode;
 use reqwest::header::HeaderMap;
 
 use crate::parser::StringOrStrings;
-use crate::runner::RunnerResult;
+use crate::runner::test_runner::RunnerResult;
 use crate::validator::Assertion;
 
 pub struct Asserter {}
@@ -414,8 +414,8 @@ mod test {
     use crate::asserter::AssertResult;
     use crate::asserter::Asserter;
     use crate::asserter::TestResult;
-    use crate::runner::CapturedResponse;
-    use crate::runner::RunnerResult;
+    use crate::runner::test_runner::CapturedResponse;
+    use crate::runner::test_runner::RunnerResult;
     use crate::validator::Assertion;
 
     #[test]

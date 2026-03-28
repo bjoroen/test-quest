@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::str::FromStr;
 
@@ -10,7 +11,7 @@ use reqwest::header::HeaderMap;
 use thiserror::Error;
 
 mod parser_assertion;
-mod prop_tests;
+pub mod prop_tests;
 
 use crate::parser;
 use crate::parser::Global;
@@ -18,6 +19,7 @@ use crate::parser::Hook;
 use crate::parser::ImageRef;
 use crate::parser::StringOrStrings;
 use crate::parser::TestQuest;
+use crate::validator::prop_tests::PropTests;
 
 // Error messages for parsing URLs
 const BASE_URL_ENDS_WITH: &str =
@@ -60,6 +62,7 @@ pub struct EnvSetup {
 pub struct IR {
     pub before_each_group: Option<BeforeEach>,
     pub tests: Vec<TestGroups>,
+    pub prop_tests: Option<Vec<PropTests>>,
 }
 
 pub struct TestGroups {
@@ -69,13 +72,13 @@ pub struct TestGroups {
     pub tests: Vec<ValidatedTests>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct BeforeEach {
     pub reset_db: Option<bool>,
     pub sql: Option<Vec<String>>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ValidatedTests {
     // TODO: Naming here is not optimal, some should be named before_each, but for tests its
     // before_run that makes the most sense
@@ -87,8 +90,6 @@ pub struct ValidatedTests {
     pub body: Option<serde_json::Value>,
     pub assertions: Vec<Assertion>,
 }
-
-pub struct PropTests {}
 
 #[derive(Debug, Error, Diagnostic)]
 #[error("Invalid field `{field}`: {message}")]
@@ -125,19 +126,59 @@ impl Validator {
     }
 
     pub fn validate(&mut self) -> miette::Result<(IR, EnvSetup), ValidationError> {
-        let tests = self.validate_tests()?;
+        let mut tests = self.validate_tests()?;
         let setup = self.validate_setup()?;
-        let prop_tests = self.validate_prop_tests()?;
 
+        let file_name = self.file_name.clone();
+        let toml_src = self.toml_src.clone();
+        // TODO: Refactor this mess
+        let test_of_props = self
+            .test_quest
+            .prop_tests
+            .clone()
+            .unwrap()
+            .iter()
+            .map(|pt| {
+                let steps = pt
+                    .steps
+                    .iter()
+                    .map(|step| {
+                        self.create_test(
+                            step,
+                            file_name.as_ref(),
+                            toml_src.as_ref(),
+                            &self.test_quest.setup.base_url,
+                            &self.test_quest.global,
+                        )
+                    })
+                    .collect::<Result<Vec<_>, ValidationError>>()?;
+
+                let before = self.create_before_each(&pt.before_run)?;
+
+                Ok((
+                    pt.props.clone(),
+                    PropTests {
+                        name: pt.name.clone(),
+                        props: None,
+                        before_run: before,
+                        steps,
+                        n_runs: 2,
+                    },
+                ))
+            })
+            .collect::<Result<Vec<_>, ValidationError>>()?;
+
+        let prop_tests = self.validate_prop_tests(test_of_props)?;
+
+        tests.prop_tests = Some(prop_tests);
         Ok((tests, setup))
     }
 
-    fn validate_prop_tests(&self) -> Result<PropTests, ValidationError> {
-        if let Some(prop_tests) = &self.test_quest.prop_tests {
-            Ok(prop_tests::parse_prop_tests(prop_tests).unwrap())
-        } else {
-            todo!()
-        }
+    fn validate_prop_tests(
+        &self,
+        tests: Vec<(HashMap<String, String>, PropTests)>,
+    ) -> Result<Vec<PropTests>, ValidationError> {
+        Ok(prop_tests::parse_prop_tests(tests).unwrap())
     }
 
     fn validate_tests(&self) -> Result<IR, ValidationError> {
@@ -181,6 +222,7 @@ impl Validator {
         Ok(IR {
             before_each_group,
             tests: test_groups,
+            prop_tests: None,
         })
     }
 

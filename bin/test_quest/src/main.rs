@@ -16,8 +16,7 @@ use crate::cli::Cli;
 use crate::outputter::OutPutter;
 use crate::parser::TestQuest;
 use crate::runner::RunnerError;
-use crate::runner::RunnerResult;
-use crate::runner::run_tests;
+use crate::runner::test_runner::RunnerResult;
 use crate::setup::StartUpError;
 use crate::setup::app::AppProcess;
 use crate::setup::app::OutputLine;
@@ -113,7 +112,7 @@ async fn load_and_validate_config() -> Result<(Cli, IR, usize, EnvSetup), TestQu
 /// # Concurrency
 /// All three tasks run concurrently and communicate via flume channels.
 async fn run_pipeline_tasks(
-    test_groups: IR,
+    ir: IR,
     n_tests: usize,
     pool: Arc<AnyDbPool>,
     path: &str,
@@ -135,8 +134,10 @@ async fn run_pipeline_tasks(
     });
 
     // TestRunner Task
-
-    let runner_jh = tokio::spawn(async move { run_tests(test_groups, runner_tx, pool).await });
+    let runner_jh = tokio::spawn(async move {
+        let runner = runner::Runner {};
+        runner.run(ir, runner_tx, pool).await
+    });
 
     // Asserter Task
     let asserter_outputter_tx = asserter_tx;

@@ -1,112 +1,104 @@
 use std::collections::HashMap;
+use std::hash::DefaultHasher;
+use std::hash::Hash;
+use std::hash::Hasher;
 
-use proptest::char::any;
-use proptest::prelude::BoxedStrategy;
-use proptest::prelude::Strategy;
-use serde_json::Value;
+use rand::Rng;
+use rand::SeedableRng;
+use rand::rngs::StdRng;
 
-use crate::parser::RawPropTests;
-use crate::validator::PropTests;
+use crate::validator::BeforeEach;
+use crate::validator::ValidatedTests;
 
-pub fn parse_prop_tests(tests: &Vec<RawPropTests>) -> Result<PropTests, String> {
-    todo!()
+#[derive(Debug)]
+pub struct PropTests {
+    pub name: String,
+    pub props: Option<HashMap<i32, HashMap<String, Value>>>,
+    pub before_run: Option<BeforeEach>,
+    pub steps: Vec<ValidatedTests>,
+    pub n_runs: i32,
 }
 
-fn generate_strategy(
-    props: HashMap<String, String>,
-) -> BoxedStrategy<HashMap<String, serde_json::Value>> {
-    let strategies: Vec<(String, BoxedStrategy<serde_json::Value>)> = props
-        .into_iter()
-        .map(|(k, v)| (k, prop_strat(&v)))
-        .collect();
-
-    strategies
-        .into_iter()
-        .map(|(k, strat)| strat.prop_map(move |v| (k.clone(), v)))
-        .collect::<Vec<_>>()
-        .prop_map(|pairs| pairs.into_iter().collect::<HashMap<_, _>>())
-        .boxed()
+#[derive(Clone, Debug)]
+pub enum Value {
+    String(String),
+    Number(f64),
+    Array(Vec<Value>),
+    Map(HashMap<Value, Value>),
 }
 
-fn prop_strat(def: &str) -> BoxedStrategy<serde_json::Value> {
-    // parse string(min,max)
-    let parts: Vec<&str> = def
-        .trim_start_matches("string(")
-        .trim_end_matches(")")
-        .split(',')
-        .collect();
-    let min: usize = parts[0].parse().unwrap();
-    let max: usize = parts[1].parse().unwrap();
+pub fn parse_prop_tests(
+    prop: Vec<(HashMap<String, String>, PropTests)>,
+) -> Result<Vec<PropTests>, String /* Fix error handling */> {
+    let mut global: HashMap<i32, HashMap<String, Value>> = HashMap::new();
 
-    proptest::collection::vec(any(), min..=max)
-        .prop_map(|chars| chars.into_iter().collect::<String>())
-        .prop_map(serde_json::Value::String)
-        .boxed()
-}
-/// Recursively replace any "props.xxx" string with the generated value
-fn interpolate_props(body: &Value, props: &HashMap<String, Value>) -> Value {
-    match body {
-        Value::Object(map) => {
-            let mut new_map = serde_json::Map::new();
-            for (k, v) in map {
-                new_map.insert(k.clone(), interpolate_props(v, props));
+    Ok(prop
+        .iter()
+        .map(|(t, p)| {
+            for i in 0..p.n_runs {
+                let combined = format!("{}:{}", p.name, i);
+                let seed = seed_from_str(&combined);
+                let mut rng = StdRng::seed_from_u64(seed);
+                generate_values(&t, i, &mut global, &mut rng);
             }
-            Value::Object(new_map)
-        }
-        Value::Array(arr) => {
-            Value::Array(arr.iter().map(|v| interpolate_props(v, props)).collect())
-        }
-        Value::String(s) => {
-            if let Some(prop_name) = s.strip_prefix("props.") {
-                props.get(prop_name).cloned().unwrap_or(Value::Null)
-            } else {
-                Value::String(s.clone())
+
+            PropTests {
+                name: p.name.clone(),
+                props: Some(global.clone()),
+                before_run: p.before_run.clone(),
+                steps: p.steps.clone(),
+                n_runs: p.n_runs,
             }
+        })
+        .collect::<Vec<_>>())
+}
+
+fn generate_values(
+    props: &HashMap<String, String>,
+    iteration: i32,
+    global: &mut HashMap<i32, HashMap<String, Value>>,
+    rng: &mut StdRng,
+) {
+    let mut map = HashMap::new();
+    props.iter().for_each(|(key, value)| {
+        let value = generate_rnd_value(value, rng);
+
+        map.insert(key.clone(), value);
+        global.insert(iteration, map.clone());
+    });
+}
+
+fn generate_rnd_value(value: &str, rng: &mut StdRng) -> Value {
+    match value {
+        v if v.starts_with("string") => Value::String(random_string(rng)),
+        v if v.starts_with("int") => {
+            let n: f64 = rng.random_range(0.0..1000.0);
+            Value::Number(n)
         }
-        other => other.clone(),
+        _ => {
+            todo!();
+        }
     }
+}
+
+fn seed_from_str(s: &str) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    s.hash(&mut hasher);
+    hasher.finish()
+}
+
+fn random_string(rng: &mut StdRng) -> String {
+    let charset = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()_+=-]}[{|/?.,\";:";
+    (0..20)
+        .map(|_| charset[rng.random_range(0..charset.len())] as char)
+        .collect()
 }
 
 #[cfg(test)]
 mod test {
-    use std::collections::HashMap;
-
-    use proptest::*;
-    use serde_json::Value;
-
-    use crate::validator::prop_tests::generate_strategy;
-    use crate::validator::prop_tests::interpolate_props;
+    #[test]
+    fn i() {}
 
     #[test]
-    fn generate_strategy_test() {
-        let mut props = HashMap::new();
-        props.insert("password".to_string(), "string(1,20)".to_string());
-
-        let strat = generate_strategy(props);
-
-        proptest!(|(generated in strat)| {
-            println!("Generated props: {:?}", generated);
-        });
-        panic!()
-    }
-
-    #[test]
-    fn interpolate_props_test() {
-        let generated_props: HashMap<String, Value> = HashMap::from([(
-            "password".to_string(),
-            Value::String("mysecret123".to_string()),
-        )]);
-
-        let body: Value = serde_json::json!({
-            "username": "Harry Potter",
-            "password": "props.password"
-        });
-
-        let concrete_body = interpolate_props(&body, &generated_props);
-
-        assert_eq!(
-            concrete_body.get("password").unwrap(),
-            &serde_json::Value::String("mysecret123".to_string())
-        )
-    }
+    fn r() {}
 }

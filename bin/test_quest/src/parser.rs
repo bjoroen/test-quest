@@ -65,7 +65,7 @@ pub struct RawPropTests {
     pub name: String,
     pub before_run: Option<Hook>,
     pub props: HashMap<String, String>,
-    pub steps: Vec<Step>,
+    pub steps: Vec<Test>,
     pub assert_props: Option<Vec<PropAssertion>>,
 }
 
@@ -87,7 +87,6 @@ pub struct PropAssertion {
     #[serde(default)]
     pub right: Option<String>, // optional, e.g., for "exists" assertions
 }
-// PROP TESTS
 
 #[derive(Debug, Deserialize, Clone)]
 #[serde(untagged)]
